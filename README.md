@@ -26,16 +26,16 @@ The app also integrates a separate MediaPipe gesture-recognition module. While r
 
 ## Features
 
-| Feature | What it does | Main files |
-| --- | --- | --- |
-| Real-time transcription | Streams 16 kHz mono microphone audio to Speechmatics WebSocket | `AudioRecorder.java`, `SpeechmaticsClient.java` |
-| Speaker diarization | Separates speakers and maps labels such as `S1`, `S2`, `S3` | `SpeechmaticsClient.java`, `AppConfig.java` |
-| Speaker enrollment | Records local samples and calls Speechmatics speaker enrollment APIs | `SpeakerEnrollmentActivity.java`, `SpeechmaticsEnrollmentClient.java` |
-| Subtitle display | Shows transcript text with speaker color separation | `MainActivity.java`, `TranscriptListAdapter.java` |
-| Transcript management | Saves, lists, renames, deletes and reloads transcript text files | `TranscriptManager.java`, `SettingsActivity.java` |
-| Gesture recognition | Runs MediaPipe gesture recognition from the `:gesture` module | `gesture/src/main/java/.../GestureBackgroundRunner.kt` |
-| Text-to-Speech | Announces gesture output or other configured results | `MainActivity.java`, `SettingsActivity.java` |
-| Settings screen | Adjusts language, font size, TTS engine, speaker names and output behavior | `SettingsActivity.java` |
+| Feature                 | What it does                                                               | Main files                                                            |
+| ----------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Real-time transcription | Streams 16 kHz mono microphone audio to Speechmatics WebSocket             | `AudioRecorder.java`, `SpeechmaticsClient.java`                       |
+| Speaker diarization     | Separates speakers and maps labels such as `S1`, `S2`, `S3`                | `SpeechmaticsClient.java`, `AppConfig.java`                           |
+| Speaker enrollment      | Records local samples and calls Speechmatics speaker enrollment APIs       | `SpeakerEnrollmentActivity.java`, `SpeechmaticsEnrollmentClient.java` |
+| Subtitle display        | Shows transcript text with speaker color separation                        | `MainActivity.java`, `TranscriptListAdapter.java`                     |
+| Transcript management   | Saves, lists, renames, deletes and reloads transcript text files           | `TranscriptManager.java`, `SettingsActivity.java`                     |
+| Gesture recognition     | Runs MediaPipe gesture recognition from the `:gesture` module              | `gesture/src/main/java/.../GestureBackgroundRunner.kt`                |
+| Text-to-Speech          | Announces gesture output or other configured results                       | `MainActivity.java`, `SettingsActivity.java`                          |
+| Settings screen         | Adjusts language, font size, TTS engine, speaker names and output behavior | `SettingsActivity.java`                                               |
 
 ## Architecture
 
@@ -54,17 +54,17 @@ flowchart LR
 
 ## Tech stack
 
-| Area | Technology |
-| --- | --- |
-| App platform | Android app module `:app` |
-| Gesture module | Android library module `:gesture` |
-| Languages | Java 11, Kotlin 2.1.0 |
-| Build system | Gradle, Android Gradle Plugin 8.13.0 |
-| Speech API | Speechmatics real-time WebSocket and speaker APIs |
-| Networking | OkHttp 4.10.0 |
-| JSON parsing | Gson 2.10.1 |
-| UI | AppCompat, Material Components, ConstraintLayout |
-| Camera and gestures | CameraX 1.4.2, MediaPipe Tasks Vision 0.10.29 |
+| Area                | Technology                                        |
+| ------------------- | ------------------------------------------------- |
+| App platform        | Android app module `:app`                         |
+| Gesture module      | Android library module `:gesture`                 |
+| Languages           | Java 11, Kotlin 2.1.0                             |
+| Build system        | Gradle, Android Gradle Plugin 8.13.0              |
+| Speech API          | Speechmatics real-time WebSocket and speaker APIs |
+| Networking          | OkHttp 4.10.0                                     |
+| JSON parsing        | Gson 2.10.1                                       |
+| UI                  | AppCompat, Material Components, ConstraintLayout  |
+| Camera and gestures | CameraX 1.4.2, MediaPipe Tasks Vision 0.10.29     |
 
 ## Project structure
 
@@ -168,12 +168,12 @@ If Android Studio opens the wrong module, select the `app` run configuration bef
 
 ## Common commands
 
-| Task | Windows command |
-| --- | --- |
-| Build debug APK | `.\gradlew.bat :app:assembleDebug` |
-| Run unit tests | `.\gradlew.bat test` |
-| Run lint | `.\gradlew.bat lint` |
-| Run Gradle checks | `.\gradlew.bat check` |
+| Task                   | Windows command                      |
+| ---------------------- | ------------------------------------ |
+| Build debug APK        | `.\gradlew.bat :app:assembleDebug`   |
+| Run unit tests         | `.\gradlew.bat test`                 |
+| Run lint               | `.\gradlew.bat lint`                 |
+| Run Gradle checks      | `.\gradlew.bat check`                |
 | Run instrumented tests | `.\gradlew.bat connectedAndroidTest` |
 
 `connectedAndroidTest` requires a connected Android device or running emulator.
@@ -188,14 +188,14 @@ If Android Studio opens the wrong module, select the `app` run configuration bef
 
 ## Troubleshooting
 
-| Problem | Check |
-| --- | --- |
-| App shows a config loading error | Confirm `app/src/main/res/raw/config.json` exists and is valid JSON. |
-| Speechmatics connection fails | Check the API key, network connection, `region`, and Speechmatics account access. |
-| No microphone input | Grant microphone permission and test on a device with microphone hardware. |
-| Gesture recognition does not start | Grant camera permission and confirm the device has an available camera. |
-| TTS does not speak | Check Android Text-to-Speech settings and installed voice data. |
-| Build cannot find SDK | Open Android Studio SDK Manager and install API 36 plus required build tools. |
+| Problem                            | Check                                                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------- |
+| App shows a config loading error   | Confirm `app/src/main/res/raw/config.json` exists and is valid JSON.              |
+| Speechmatics connection fails      | Check the API key, network connection, `region`, and Speechmatics account access. |
+| No microphone input                | Grant microphone permission and test on a device with microphone hardware.        |
+| Gesture recognition does not start | Grant camera permission and confirm the device has an available camera.           |
+| TTS does not speak                 | Check Android Text-to-Speech settings and installed voice data.                   |
+| Build cannot find SDK              | Open Android Studio SDK Manager and install API 36 plus required build tools.     |
 
 ## Security and privacy notes
 
@@ -203,6 +203,55 @@ If Android Studio opens the wrong module, select the `app` run configuration bef
 - Speaker enrollment audio and transcripts are handled locally by the app.
 - `config.json` contains a real API key and must stay out of Git.
 - The manifest currently enables app backup and cleartext traffic settings. Review these before using the project outside a demo or development environment.
+
+## CI/CD
+
+Two GitHub Actions workflows run automatically:
+
+| Workflow  | Trigger             | What it does                                                                              |
+| --------- | ------------------- | ----------------------------------------------------------------------------------------- |
+| `CI`      | push to `main`, PRs | Builds the debug APK, runs lint, uploads the APK as a workflow artifact                   |
+| `Release` | pushing a tag `v*`  | Builds a signed release APK and attaches it to a GitHub Release with auto-generated notes |
+
+### Releasing
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+The release workflow builds `assembleRelease` with the version injected from the tag (`v1.0.1` -> `versionName 1.0.1`), verifies the APK signature, and publishes the release.
+
+### Signing setup (one-time)
+
+The release keystore is committed at `app/release.keystore`, but it is **password-protected** and the password never touches Git:
+
+1. Generate the keystore and a strong passphrase locally:
+
+```bash
+# Generate a 512-bit random passphrase (paste it into the secret below, do not commit it)
+openssl rand -base64 64 | tr -d '\n'
+
+# Generate the keystore (answer the prompts; keep a copy of the keystore + passphrase offline)
+keytool -genkeypair -v -keystore app/release.keystore \
+  -alias speakerdemo -keyalg RSA -keysize 2048 -validity 10000
+```
+
+2. Store the credentials as GitHub Actions secrets (Settings -> Secrets and variables -> Actions):
+
+| Secret              | Value                                       |
+| ------------------- | ------------------------------------------- |
+| `KEYSTORE_PASSWORD` | the generated passphrase                    |
+| `KEY_ALIAS`         | `speakerdemo` (or whatever alias you chose) |
+
+3. Commit the password-protected keystore:
+
+```bash
+git add app/release.keystore
+git commit -m "Add project release keystore"
+```
+
+Note: the released APK contains the placeholder API key (users must supply their own `config.json` on-device). The real Speechmatics key never leaves your machine.
 
 ## Gesture model
 

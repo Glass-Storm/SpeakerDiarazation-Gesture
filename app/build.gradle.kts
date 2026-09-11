@@ -11,9 +11,21 @@ android {
         minSdk = 28
         targetSdk = 28
         versionCode = 1
-        versionName = "1.0"
+        // Release version comes from the git tag (e.g. v1.2.3 -> "1.2.3"); falls back to a dev version.
+        versionName = System.getenv("GIT_TAG")?.removePrefix("v") ?: "1.0-dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Release keystore is committed encrypted-free but password-protected; the password
+    // and key alias are supplied at build time through environment variables (CI secrets).
+    signingConfigs {
+        create("release") {
+            storeFile = file("release.keystore")
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KEY_ALIAS")
+            keyPassword = System.getenv("KEYSTORE_PASSWORD")
+        }
     }
 
     buildTypes {
@@ -23,6 +35,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Fail fast when signing credentials are missing instead of producing an
+            // unsigned APK that cannot be installed.
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
