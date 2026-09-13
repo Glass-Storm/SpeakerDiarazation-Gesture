@@ -87,7 +87,7 @@ flowchart LR
 ## Requirements
 
 - Android Studio with Android Gradle Plugin 8.13.0 support
-- JDK 11
+- JDK 17 (required to run Gradle/AGP 8.x; the app compiles to Java 11 bytecode)
 - Android SDK:
   - `compileSdk = 36`
   - `minSdk = 28`
