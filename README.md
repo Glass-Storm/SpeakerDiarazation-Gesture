@@ -24,6 +24,13 @@ This project is an Android demo for a smart-glasses-style subtitle workflow. It 
 
 The app also integrates a separate MediaPipe gesture-recognition module. While recording, gesture detection can run in the background and optionally announce gesture results through Android Text-to-Speech.
 
+### Recent fixes
+
+- Runtime config injection: API key and region are now entered in Settings, no manual file editing
+- Security hardening: cleartext traffic disabled, backup rules exclude voice data and API key
+- Audio partial-read slicing: recorder now dispatches only the bytes actually written each iteration
+- Gesture recognition: back-camera frames are no longer mirrored, ImageProxy double-close fixed
+
 ## Features
 
 | Feature                 | What it does                                                               | Main files                                                            |
@@ -74,8 +81,7 @@ flowchart LR
 │   └── src/main/
 │       ├── java/hk/edu/hkmu/speakerdiarazationdemo/
 │       └── res/raw/
-│           ├── config_example.json
-│           └── config.json      # Local only, ignored by Git
+│           └── config_default.json  # Tracked defaults (placeholder key only)
 ├── gesture/                     # MediaPipe gesture-recognition library module
 │   └── src/main/assets/
 │       └── gesture_recognizer.task
@@ -98,27 +104,18 @@ flowchart LR
 
 ## Configuration
 
-The app reads `app/src/main/res/raw/config.json` at runtime. This file contains your real Speechmatics API key and is intentionally ignored by Git.
+The app uses a two-layer config model:
 
-Copy the safe example first:
+- **Defaults file** (`app/src/main/res/raw/config_default.json`): shipped with the repo, contains only a placeholder API key. Programmers may edit this to change default values without touching code.
+- **Runtime settings** (in-app): end users enter their API key and select the server region in the app's Settings screen. These persist in app-private SharedPreferences and take effect on the next recording or enrollment.
 
-```powershell
-Copy-Item app/src/main/res/raw/config_example.json app/src/main/res/raw/config.json
-```
-
-macOS or Linux:
-
-```bash
-cp app/src/main/res/raw/config_example.json app/src/main/res/raw/config.json
-```
-
-Then edit `app/src/main/res/raw/config.json`:
+The defaults file ships with only a placeholder:
 
 ```json
 {
   "api_key": "YOUR_SPEECHMATICS_API_KEY",
   "language": "yue",
-  "region": "usa",
+  "region": "us",
   "timeout_seconds": 1.5,
   "operating_point": "enhanced",
   "max_delay_mode": "flexible",
@@ -138,19 +135,17 @@ Then edit `app/src/main/res/raw/config.json`:
 }
 ```
 
-Important:
+To set or change the API key and region, open the app and go to **設定 → Speechmatics 連線設定**. Enter your API key, toggle show/hide as needed, and select the region (自動（全球）/歐洲 (eu)/美國 (us)/澳洲 (au)). Changes apply on the next recording or enrollment.
 
-- Never commit the real `config.json`.
-- Do not run `git add -f app/src/main/res/raw/config.json`.
-- Keep public examples using `YOUR_SPEECHMATICS_API_KEY`.
+**First run:** recording and enrollment are blocked with a toast until an API key is entered in Settings.
+
+> **Warning:** Never put a real API key into `config_default.json` — that file is committed to the repository. The in-app Settings screen is the only place to enter a real key.
 
 ## Quick start
 
 1. Open this repository in Android Studio.
-2. Create `app/src/main/res/raw/config.json` from `config_example.json`.
-3. Add your Speechmatics API key locally.
-4. Run Gradle Sync.
-5. Build and install the app from Android Studio, or run:
+2. Run Gradle Sync.
+3. Build and install the app from Android Studio, or run:
 
 ```powershell
 .\gradlew.bat :app:assembleDebug
@@ -188,21 +183,21 @@ If Android Studio opens the wrong module, select the `app` run configuration bef
 
 ## Troubleshooting
 
-| Problem                            | Check                                                                             |
-| ---------------------------------- | --------------------------------------------------------------------------------- |
-| App shows a config loading error   | Confirm `app/src/main/res/raw/config.json` exists and is valid JSON.              |
-| Speechmatics connection fails      | Check the API key, network connection, `region`, and Speechmatics account access. |
-| No microphone input                | Grant microphone permission and test on a device with microphone hardware.        |
-| Gesture recognition does not start | Grant camera permission and confirm the device has an available camera.           |
-| TTS does not speak                 | Check Android Text-to-Speech settings and installed voice data.                   |
-| Build cannot find SDK              | Open Android Studio SDK Manager and install API 36 plus required build tools.     |
+| Problem                            | Check                                                                         |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| App shows 請先於設定輸入 API 金鑰  | Enter your Speechmatics API key in Settings → Speechmatics 連線設定.          |
+| Speechmatics connection fails      | Check the API key in Settings, the selected region, and network connectivity. |
+| No microphone input                | Grant microphone permission and test on a device with microphone hardware.    |
+| Gesture recognition does not start | Grant camera permission and confirm the device has an available camera.       |
+| TTS does not speak                 | Check Android Text-to-Speech settings and installed voice data.               |
+| Build cannot find SDK              | Open Android Studio SDK Manager and install API 36 plus required build tools. |
 
 ## Security and privacy notes
 
 - Microphone audio is streamed to Speechmatics for transcription.
 - Speaker enrollment audio and transcripts are handled locally by the app.
-- `config.json` contains a real API key and must stay out of Git.
-- The manifest currently enables app backup and cleartext traffic settings. Review these before using the project outside a demo or development environment.
+- The API key is entered in-app and stored in app-private SharedPreferences, excluded from cloud backup and device transfer. `config_default.json` ships only a placeholder.
+- Cleartext traffic is disabled and backup rules exclude voice samples, transcripts, and speaker data.
 
 ## CI/CD
 
@@ -251,7 +246,7 @@ git add app/release.keystore
 git commit -m "Add project release keystore"
 ```
 
-Note: the released APK contains the placeholder API key (users must supply their own `config.json` on-device). The real Speechmatics key never leaves your machine.
+Note: the released APK contains the placeholder API key (users enter their own API key in the Settings screen on first run). The real Speechmatics key never leaves your machine.
 
 ## Gesture model
 
