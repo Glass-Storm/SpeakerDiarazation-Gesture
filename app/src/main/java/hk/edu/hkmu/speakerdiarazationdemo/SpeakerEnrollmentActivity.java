@@ -264,6 +264,11 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
             return;
         }
 
+        if (!RuntimeConfigStore.hasApiKey(this)) {
+            Toast.makeText(this, "請先於設定 → Speechmatics 連線設定輸入 Speechmatics API 金鑰", Toast.LENGTH_LONG).show();
+            return;
+        }
+
         SpeechmaticsEnrollmentClient client = new SpeechmaticsEnrollmentClient(appConfig);
         client.enroll(floatData, languageCode, new SpeechmaticsEnrollmentClient.Callback() {
             @Override

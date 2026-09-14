@@ -26,12 +26,6 @@ jobs:
       - name: Set up Gradle (with caching)
         uses: gradle/actions/setup-gradle@v4
 
-      # config.json is gitignored (real API key must never be committed) but is
-      # referenced at compile time via R.raw.config. CI builds use the placeholder
-      # example so the resource exists for the compiler.
-      - name: Create config.json from example
-        run: cp app/src/main/res/raw/config_example.json app/src/main/res/raw/config.json
-
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
 

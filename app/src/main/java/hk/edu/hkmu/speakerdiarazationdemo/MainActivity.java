@@ -841,6 +841,11 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        if (!RuntimeConfigStore.hasApiKey(this)) {
+            Toast.makeText(this, "請先於設定 → Speechmatics 連線設定輸入 Speechmatics API 金鑰", Toast.LENGTH_LONG).show();
+            return;
+        }
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this, "請授予麥克風權限", Toast.LENGTH_SHORT).show();

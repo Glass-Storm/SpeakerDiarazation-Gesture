@@ -28,11 +28,6 @@ jobs:
       - name: Set up Gradle (with caching)
         uses: gradle/actions/setup-gradle@v4
 
-      # config.json is gitignored; CI builds from the example file. The placeholder
-      # API key ships in the public APK - users supply their own key on-device.
-      - name: Create config.json from example
-        run: cp app/src/main/res/raw/config_example.json app/src/main/res/raw/config.json
-
       - name: Build signed release APK
         run: ./gradlew :app:assembleRelease --stacktrace
         env:

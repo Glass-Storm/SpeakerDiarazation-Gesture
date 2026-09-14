@@ -24,16 +24,15 @@ import org.json.JSONArray;
 public class SpeechmaticsClient extends WebSocketListener {
     private static final String TAG = "SpeechmaticsClient";
     private static final String TOKEN_URL = "https://mp.speechmatics.com/v1/api_keys?type=rt";
-    private static final String WS_URL = "wss://wus.rt.speechmatics.com/v2/";//wss://eu2.rt.speechmatics.com/v2 歐洲的server
     
     private OkHttpClient httpClient;
-    private WebSocket webSocket;
+    private volatile WebSocket webSocket;
     private AppConfig config;
     private SpeechmaticsCallback callback;
     private TranscriptManager transcriptManager;
-    private boolean isConnected = false;
+    private volatile boolean isConnected = false;
     private final List<EnrolledSpeaker> enrolledSpeakers = new ArrayList<>();
-    private String sessionId = null;
+    private volatile String sessionId = null;
 
     public interface SpeechmaticsCallback {
         void onConnected();
@@ -66,7 +65,7 @@ public class SpeechmaticsClient extends WebSocketListener {
                 String token = generateTempToken(config.getApiKey());
                 Log.d(TAG, "JWT token generated successfully");
                 
-                String wsUrl = WS_URL + "?jwt=" + token;
+                String wsUrl = RuntimeConfigStore.regionToWsUrl(config.getRegion()) + "?jwt=" + token;
                 Request request = new Request.Builder().url(wsUrl).build();
                 webSocket = httpClient.newWebSocket(request, this);
                 
@@ -86,8 +85,6 @@ public class SpeechmaticsClient extends WebSocketListener {
     private String generateTempToken(String apiKey) throws Exception {
         JSONObject json = new JSONObject();
         json.put("ttl", 600);
-        String region = config != null && config.getRegion() != null ? config.getRegion() : "eu";
-        json.put("region", region);
 
         RequestBody body = RequestBody.create(
             json.toString(),
