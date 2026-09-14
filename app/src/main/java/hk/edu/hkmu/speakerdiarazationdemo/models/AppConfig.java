@@ -21,6 +21,10 @@ public class AppConfig {
         return api_key;
     }
 
+    public void setApiKey(String api_key) {
+        this.api_key = api_key;
+    }
+
     public String getLanguage() {
         return language;
     }
@@ -40,7 +44,11 @@ public class AppConfig {
     }
 
     public String getRegion() {
-        return region != null ? region : "usa";
+        return region != null ? region : "us";
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
     }
 
     public String getOperatingPoint() {

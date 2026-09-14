@@ -12,19 +12,26 @@ public class ConfigManager {
 
     private ConfigManager() {}
 
-    public static ConfigManager getInstance() {
+    public static synchronized ConfigManager getInstance() {
         if (instance == null) {
             instance = new ConfigManager();
         }
         return instance;
     }
 
-    public void loadConfig(Context context) throws Exception {
-        InputStream inputStream = context.getResources().openRawResource(R.raw.config_default);
-        InputStreamReader reader = new InputStreamReader(inputStream);
-        Gson gson = new Gson();
-        config = gson.fromJson(reader, AppConfig.class);
-        reader.close();
+    public synchronized void loadConfig(Context context) throws Exception {
+        try (InputStream inputStream = context.getResources().openRawResource(R.raw.config_default);
+             InputStreamReader reader = new InputStreamReader(inputStream)) {
+            Gson gson = new Gson();
+            config = gson.fromJson(reader, AppConfig.class);
+        }
+        if (config == null) {
+            throw new IllegalStateException("config_default.json is empty or malformed");
+        }
+        if (RuntimeConfigStore.hasApiKey(context)) {
+            config.setApiKey(RuntimeConfigStore.getApiKey(context));
+        }
+        config.setRegion(RuntimeConfigStore.getRegion(context));
     }
 
     public AppConfig getConfig() {
