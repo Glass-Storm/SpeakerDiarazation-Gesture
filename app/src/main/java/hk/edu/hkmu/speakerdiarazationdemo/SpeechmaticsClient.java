@@ -65,8 +65,7 @@ public class SpeechmaticsClient extends WebSocketListener {
                 String token = generateTempToken(config.getApiKey());
                 Log.d(TAG, "JWT token generated successfully");
                 
-                String wsUrl = "wss://us.rt.speechmatics.com/v2?jwt=" + token;
-                // TODO(T10): region map lands here — RuntimeConfigStore.regionToWsUrl(config.getRegion())
+                String wsUrl = RuntimeConfigStore.regionToWsUrl(config.getRegion()) + "?jwt=" + token;
                 Request request = new Request.Builder().url(wsUrl).build();
                 webSocket = httpClient.newWebSocket(request, this);
                 
