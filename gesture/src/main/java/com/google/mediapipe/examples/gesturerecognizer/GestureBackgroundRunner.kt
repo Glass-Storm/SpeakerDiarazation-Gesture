@@ -55,6 +55,7 @@ class GestureBackgroundRunner @JvmOverloads constructor(
             runningMode = RunningMode.LIVE_STREAM,
             context = context.applicationContext,
             gestureRecognizerListener = this,
+            mirrorHorizontally = (cameraFacing == CameraSelector.LENS_FACING_FRONT),
         )
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)

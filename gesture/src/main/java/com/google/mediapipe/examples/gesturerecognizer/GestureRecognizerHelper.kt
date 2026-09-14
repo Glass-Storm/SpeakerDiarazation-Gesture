@@ -39,7 +39,8 @@ class GestureRecognizerHelper(
     var currentDelegate: Int = DELEGATE_CPU,
     var runningMode: RunningMode = RunningMode.IMAGE,
     val context: Context,
-    val gestureRecognizerListener: GestureRecognizerListener? = null
+    val gestureRecognizerListener: GestureRecognizerListener? = null,
+    private val mirrorHorizontally: Boolean = true
 ) {
 
     // For this example this needs to be a var so it can be reset on changes. If the GestureRecognizer
@@ -124,16 +125,17 @@ class GestureRecognizerHelper(
             imageProxy.width, imageProxy.height, Bitmap.Config.ARGB_8888
         )
         imageProxy.use { bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer) }
-        imageProxy.close()
 
         val matrix = Matrix().apply {
             // Rotate the frame received from the camera to be in the same direction as it'll be shown
             postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
 
-            // flip image since we only support front camera
-            postScale(
-                -1f, 1f, imageProxy.width.toFloat(), imageProxy.height.toFloat()
-            )
+            // Mirror only when requested (front camera); back-camera frames stay un-mirrored
+            if (mirrorHorizontally) {
+                postScale(
+                    -1f, 1f, imageProxy.width.toFloat(), imageProxy.height.toFloat()
+                )
+            }
         }
 
         // Rotate bitmap to match what our model expects
