@@ -7,6 +7,7 @@ import android.media.MediaRecorder;
 import android.util.Log;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 
 public class AudioRecorder {
     private static final String TAG = "AudioRecorder";
@@ -105,21 +106,26 @@ public class AudioRecorder {
 
     public void stopRecording() {
         if (!isRecording) return;
-        
+
         isRecording = false;
-        
+
+        if (audioRecord != null) {
+            try {
+                audioRecord.stop();
+            } catch (IllegalStateException e) {
+                Log.w(TAG, "AudioRecord stop failed", e);
+            }
+        }
+
         if (recordingThread != null) {
             try {
                 recordingThread.join();
             } catch (InterruptedException e) {
                 Log.e(TAG, "Error stopping recording thread", e);
             }
+            recordingThread = null;
         }
-        
-        if (audioRecord != null) {
-            audioRecord.stop();
-        }
-        
+
         Log.d(TAG, "Recording stopped");
     }
 
@@ -159,7 +165,7 @@ public class AudioRecorder {
 
     private void dispatchAudio(byte[] buffer, int samplesRead) {
         if (callback != null && samplesRead > 0) {
-            callback.onAudioData(buffer);
+            callback.onAudioData(Arrays.copyOfRange(buffer, 0, samplesRead * 4));
         }
     }
 
