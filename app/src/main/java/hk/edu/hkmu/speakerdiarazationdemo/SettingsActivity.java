@@ -12,6 +12,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.content.pm.ResolveInfo;
 import android.text.InputFilter;
+import android.text.method.PasswordTransformationMethod;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
@@ -532,7 +533,7 @@ public class SettingsActivity extends AppCompatActivity {
             if (isChecked) {
                 etApiKey.setTransformationMethod(null);
             } else {
-                etApiKey.setTransformationMethod(HideReturnsTransformationMethod.getInstance());
+                etApiKey.setTransformationMethod(PasswordTransformationMethod.getInstance());
             }
         });
 
