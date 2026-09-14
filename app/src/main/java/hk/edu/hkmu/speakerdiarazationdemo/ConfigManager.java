@@ -20,7 +20,7 @@ public class ConfigManager {
     }
 
     public void loadConfig(Context context) throws Exception {
-        InputStream inputStream = context.getResources().openRawResource(R.raw.config);
+        InputStream inputStream = context.getResources().openRawResource(R.raw.config_default);
         InputStreamReader reader = new InputStreamReader(inputStream);
         Gson gson = new Gson();
         config = gson.fromJson(reader, AppConfig.class);

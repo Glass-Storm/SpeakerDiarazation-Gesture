@@ -45,5 +45,3 @@ keystore.properties
 google-services.json
 secrets.properties
 
-# Never commit the real Speechmatics API key.
-/app/src/main/res/raw/config.json

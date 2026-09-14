@@ -1,7 +1,7 @@
 {
   "api_key": "YOUR_SPEECHMATICS_API_KEY",
   "language": "yue",
-  "region": "usa",
+  "region": "us",
   "timeout_seconds": 1.5,
   "operating_point": "enhanced",
   "max_delay_mode": "flexible",
