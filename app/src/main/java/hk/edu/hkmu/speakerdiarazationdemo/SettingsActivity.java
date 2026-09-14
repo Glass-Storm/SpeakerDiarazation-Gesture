@@ -102,6 +102,10 @@ public class SettingsActivity extends AppCompatActivity {
     private static final int TRANSCRIPT_PAGE_SIZE = 20;
     private int loadedTranscriptCount = 0;
 
+    private EditText etApiKey;
+    private CheckBox cbShowApiKey;
+    private Spinner spinnerRegion;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -148,6 +152,10 @@ public class SettingsActivity extends AppCompatActivity {
         btnClearTranscripts = findViewById(R.id.btnClearTranscripts);
         tvTranscriptPath = findViewById(R.id.tvTranscriptPath);
 
+        etApiKey = findViewById(R.id.etApiKey);
+        cbShowApiKey = findViewById(R.id.cbShowApiKey);
+        spinnerRegion = findViewById(R.id.spinnerRegion);
+
         if (btnBack != null) {
             btnBack.setOnClickListener(v -> finish());
         }
@@ -162,6 +170,8 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         setupTtsEngineSpinner();
+        setupApiKeyControls();
+        setupRegionSpinner();
     }
 
     private void initFontSizeControls() {
@@ -194,6 +204,9 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         persistFontSize(getSelectedFontSize());
+        if (etApiKey != null) {
+            RuntimeConfigStore.setApiKey(this, etApiKey.getText().toString().trim());
+        }
         super.onPause();
     }
 
@@ -502,6 +515,68 @@ public class SettingsActivity extends AppCompatActivity {
                 // Re-init with the newly selected engine next time.
                 resetTts();
                 ensureTts();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+    }
+
+    private void setupApiKeyControls() {
+        if (etApiKey == null || cbShowApiKey == null) {
+            return;
+        }
+        etApiKey.setText(RuntimeConfigStore.getApiKey(this));
+
+        cbShowApiKey.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (isChecked) {
+                etApiKey.setTransformationMethod(null);
+            } else {
+                etApiKey.setTransformationMethod(HideReturnsTransformationMethod.getInstance());
+            }
+        });
+
+        etApiKey.setOnEditorActionListener((v, actionId, event) -> {
+            RuntimeConfigStore.setApiKey(this, etApiKey.getText().toString().trim());
+            return false;
+        });
+    }
+
+    private void setupRegionSpinner() {
+        if (spinnerRegion == null) {
+            return;
+        }
+        String[] regionLabels = {"自動（全球）", "歐洲 (eu)", "美國 (us)", "澳洲 (au)"};
+        String[] regionValues = {"global", "eu", "us", "au"};
+
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+            this,
+            android.R.layout.simple_spinner_item,
+            regionLabels
+        );
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerRegion.setAdapter(adapter);
+
+        String savedRegion = RuntimeConfigStore.getRegion(this);
+        int initialIndex = 2; // default "us"
+        for (int i = 0; i < regionValues.length; i++) {
+            if (regionValues[i].equals(savedRegion)) {
+                initialIndex = i;
+                break;
+            }
+        }
+        spinnerRegion.setSelection(initialIndex, false);
+
+        spinnerRegion.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            private boolean isFirstSelection = true;
+
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (isFirstSelection) {
+                    isFirstSelection = false;
+                    return;
+                }
+                RuntimeConfigStore.setRegion(SettingsActivity.this, regionValues[position]);
             }
 
             @Override

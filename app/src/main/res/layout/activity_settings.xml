@@ -131,6 +131,61 @@
             android:textColor="#FFFFFF"
             android:padding="10dp" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="Speechmatics 連線設定"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:paddingBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="輸入 API 金鑰與伺服器地區，下次錄音時生效。"
+            android:textColor="#BBBBBB"
+            android:textSize="14sp"
+            android:paddingBottom="8dp" />
+
+        <EditText
+            android:id="@+id/etApiKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:inputType="textPassword"
+            android:imeOptions="actionDone"
+            android:hint="Speechmatics API 金鑰"
+            android:textColor="#FFFFFF"
+            android:background="#2E2E2E"
+            android:padding="12dp" />
+
+        <CheckBox
+            android:id="@+id/cbShowApiKey"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="顯示金鑰"
+            android:textColor="#FFFFFF" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="伺服器地區"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
+        <Spinner
+            android:id="@+id/spinnerRegion"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/bg_spinner_background"
+            android:padding="8dp"
+            android:popupBackground="@drawable/bg_spinner_popup" />
+
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
