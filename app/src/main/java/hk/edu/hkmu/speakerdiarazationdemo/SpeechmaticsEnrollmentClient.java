@@ -23,7 +23,6 @@ import org.json.JSONObject;
 public class SpeechmaticsEnrollmentClient extends WebSocketListener {
     private static final String TAG = "EnrollmentClient";
     private static final String TOKEN_URL = "https://mp.speechmatics.com/v1/api_keys?type=rt";
-    private static final String WS_URL = "wss://wus.rt.speechmatics.com/v2/";
     private static final int AUDIO_CHUNK_SIZE = 8096;
 
     public interface Callback {
@@ -63,7 +62,8 @@ public class SpeechmaticsEnrollmentClient extends WebSocketListener {
         new Thread(() -> {
             try {
                 String token = generateTempToken(config.getApiKey());
-                String wsUrl = WS_URL + "?jwt=" + token;
+                String wsUrl = "wss://us.rt.speechmatics.com/v2?jwt=" + token;
+                // TODO(T10): region map lands here — RuntimeConfigStore.regionToWsUrl(config.getRegion())
                 Request request = new Request.Builder().url(wsUrl).build();
                 webSocket = httpClient.newWebSocket(request, this);
             } catch (Exception e) {
@@ -82,8 +82,6 @@ public class SpeechmaticsEnrollmentClient extends WebSocketListener {
     private String generateTempToken(String apiKey) throws Exception {
         JSONObject json = new JSONObject();
         json.put("ttl", 600);
-        String region = config != null && config.getRegion() != null ? config.getRegion() : "eu";
-        json.put("region", region);
 
         RequestBody body = RequestBody.create(
                 json.toString(),
