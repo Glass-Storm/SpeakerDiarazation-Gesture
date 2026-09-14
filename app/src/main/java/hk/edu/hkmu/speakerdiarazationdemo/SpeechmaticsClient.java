@@ -26,13 +26,13 @@ public class SpeechmaticsClient extends WebSocketListener {
     private static final String TOKEN_URL = "https://mp.speechmatics.com/v1/api_keys?type=rt";
     
     private OkHttpClient httpClient;
-    private WebSocket webSocket;
+    private volatile WebSocket webSocket;
     private AppConfig config;
     private SpeechmaticsCallback callback;
     private TranscriptManager transcriptManager;
-    private boolean isConnected = false;
+    private volatile boolean isConnected = false;
     private final List<EnrolledSpeaker> enrolledSpeakers = new ArrayList<>();
-    private String sessionId = null;
+    private volatile String sessionId = null;
 
     public interface SpeechmaticsCallback {
         void onConnected();
