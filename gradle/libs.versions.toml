@@ -33,6 +33,9 @@ ecosys-contract = { group = "com.glassstorm.phonemanager", name = "contract", ve
 grpc-stub = { group = "io.grpc", name = "grpc-stub", version.ref = "grpc" }
 grpc-protobuf-lite = { group = "io.grpc", name = "grpc-protobuf-lite", version.ref = "grpc" }
 grpc-kotlin-stub = { group = "io.grpc", name = "grpc-kotlin-stub", version.ref = "grpcKotlin" }
+# In-process transport: lets a plain JVM unit test stand up a real gRPC server
+# in the same process (no socket, no device) to round-trip an ecosys.v1 frame.
+grpc-inprocess = { group = "io.grpc", name = "grpc-inprocess", version.ref = "grpc" }
 protobuf-javalite = { group = "com.google.protobuf", name = "protobuf-javalite", version.ref = "protobufLite" }
 protobuf-kotlin-lite = { group = "com.google.protobuf", name = "protobuf-kotlin-lite", version.ref = "protobufLite" }
 

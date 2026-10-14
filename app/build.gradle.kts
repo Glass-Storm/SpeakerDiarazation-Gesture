@@ -88,6 +88,9 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
     
     testImplementation(libs.junit)
+    // Stands an ecosys.v1 gRPC server up in the same JVM as the unit test so the
+    // stream client can be round-tripped without a socket, device, or emulator.
+    testImplementation(libs.grpc.inprocess)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
 }
