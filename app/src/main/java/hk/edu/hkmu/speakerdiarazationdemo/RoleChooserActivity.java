@@ -41,7 +41,7 @@ public class RoleChooserActivity extends AppCompatActivity {
     }
 
     private void proceed(SessionMode mode) {
-        Intent intent = new Intent(this, MainActivity.class);
+        Intent intent = new Intent(this, ConnectActivity.class);
         intent.putExtra(MainActivity.EXTRA_SESSION_MODE, mode.name());
         startActivity(intent);
         Toast.makeText(this, "身份：" + mode.label(), Toast.LENGTH_SHORT).show();

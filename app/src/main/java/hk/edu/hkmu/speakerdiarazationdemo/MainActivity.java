@@ -72,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
     public static final String EXTRA_SESSION_MODE = "extra_session_mode";
     /** Optional hub-host override (tools/tests); defaults to the SoftAP gateway. */
     public static final String EXTRA_HUB_HOST = "extra_hub_host";
-    /** The phone is the SoftAP, so the hub is reachable at the gateway until T22 auto-detects it. */
+    /** Last-resort SoftAP gateway; ConnectActivity normally supplies the auto-detected host. */
     private static final String DEFAULT_HUB_HOST = "192.168.43.1";
     private static final String ECOSYS_DEVICE_ID = "glasses";
     private static final String UNKNOWN_SPEAKER_DISPLAY = "Unknown";
