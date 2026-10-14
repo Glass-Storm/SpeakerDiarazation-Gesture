@@ -215,6 +215,7 @@ public final class EcosysStreamClient implements AutoCloseable {
 
         @Override
         public void onError(Throwable cause) {
+            clearObserver(this);
             if (closed.get()) {
                 return;
             }
@@ -226,6 +227,7 @@ public final class EcosysStreamClient implements AutoCloseable {
 
         @Override
         public void onCompleted() {
+            clearObserver(this);
             if (closed.get()) {
                 return;
             }
@@ -233,6 +235,14 @@ public final class EcosysStreamClient implements AutoCloseable {
                 listener.onDisconnected(null);
             }
             scheduleReconnect();
+        }
+    }
+
+    private void clearObserver(StreamObserver<StreamFrame> observer) {
+        synchronized (sendLock) {
+            if (requestObserver == observer) {
+                requestObserver = null;
+            }
         }
     }
 }

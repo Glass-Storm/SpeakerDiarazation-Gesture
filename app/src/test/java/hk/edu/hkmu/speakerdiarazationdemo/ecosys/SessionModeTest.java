@@ -8,34 +8,20 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 /**
- * Pins the role → payload-kind mapping and the two display capabilities the later
- * glasses tasks depend on. Pure JVM: no device, no Robolectric.
+ * Pins the display capabilities the later glasses tasks depend on. Pure JVM: no
+ * device, no Robolectric.
  */
 public class SessionModeTest {
-
-    @Test
-    public void deafModeSendsAudio() {
-        assertEquals(PayloadKind.AUDIO, SessionMode.payloadKindFor(SessionMode.DEAF));
-        assertEquals(PayloadKind.AUDIO, SessionMode.DEAF.payloadKind());
-    }
-
-    @Test
-    public void hearingModeSendsImages() {
-        assertEquals(PayloadKind.IMAGE, SessionMode.payloadKindFor(SessionMode.HEARING));
-        assertEquals(PayloadKind.IMAGE, SessionMode.HEARING.payloadKind());
-    }
 
     @Test
     public void capabilitiesMatchTheRole() {
         assertTrue(SessionMode.DEAF.sendsAudio());
         assertTrue(SessionMode.DEAF.showsSubtitles());
-        assertFalse(SessionMode.DEAF.sendsImages());
         assertFalse(SessionMode.DEAF.showsGestureText());
 
-        assertTrue(SessionMode.HEARING.sendsImages());
-        assertTrue(SessionMode.HEARING.showsGestureText());
         assertFalse(SessionMode.HEARING.sendsAudio());
         assertFalse(SessionMode.HEARING.showsSubtitles());
+        assertTrue(SessionMode.HEARING.showsGestureText());
     }
 
     @Test
@@ -54,11 +40,6 @@ public class SessionModeTest {
     public void labelsAreTheTwoChoices() {
         assertEquals("我是聽障人士", SessionMode.DEAF.label());
         assertEquals("我是健全人士", SessionMode.HEARING.label());
-    }
-
-    @Test
-    public void nullModeHasNoPayloadKind() {
-        assertNull(SessionMode.payloadKindFor(null));
     }
 
     @Test

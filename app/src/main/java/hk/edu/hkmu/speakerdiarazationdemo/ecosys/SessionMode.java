@@ -7,41 +7,34 @@ package hk.edu.hkmu.speakerdiarazationdemo.ecosys;
  * <ul>
  *   <li>{@link #DEAF} (聽障) sends captured <b>audio</b> to the hub and shows
  *       <b>subtitles</b> (with a speaker tag on each line).</li>
- *   <li>{@link #HEARING} (健全) sends <b>images</b> to the hub and shows
- *       <b>gesture text</b> while playing the hub-synthesized audio.</li>
+ *   <li>{@link #HEARING} (健全) shows the <b>gesture text</b> the hub derives
+ *       from the necklace's camera while playing the hub-synthesized audio.</li>
  * </ul>
  *
- * <p>Pure and Android-free by design: later tasks read the mapping through
- * {@link #payloadKind()} / {@link #payloadKindFor(SessionMode)} instead of
- * re-deriving it, and the JVM unit test pins it.
+ * <p>Pure and Android-free by design: the display capabilities the session reads
+ * are exposed as explicit predicates and the JVM unit test pins them.
  */
 public enum SessionMode {
 
     /** 聽障人士: send S2 audio, display subtitles + speaker tag. */
-    DEAF("我是聽障人士", PayloadKind.AUDIO, true, true, false, false),
+    DEAF("我是聽障人士", true, true, false),
 
-    /** 健全人士: send S3 images, display gesture text and play audio. */
-    HEARING("我是健全人士", PayloadKind.IMAGE, false, false, true, true);
+    /** 健全人士: display gesture text and play audio. */
+    HEARING("我是健全人士", false, false, true);
 
     private final String label;
-    private final PayloadKind payloadKind;
     private final boolean sendsAudio;
     private final boolean showsSubtitles;
-    private final boolean sendsImages;
     private final boolean showsGestureText;
 
     SessionMode(
             String label,
-            PayloadKind payloadKind,
             boolean sendsAudio,
             boolean showsSubtitles,
-            boolean sendsImages,
             boolean showsGestureText) {
         this.label = label;
-        this.payloadKind = payloadKind;
         this.sendsAudio = sendsAudio;
         this.showsSubtitles = showsSubtitles;
-        this.sendsImages = sendsImages;
         this.showsGestureText = showsGestureText;
     }
 
@@ -50,21 +43,12 @@ public enum SessionMode {
         return label;
     }
 
-    /** The media this mode sends on the stream. */
-    public PayloadKind payloadKind() {
-        return payloadKind;
-    }
-
     public boolean sendsAudio() {
         return sendsAudio;
     }
 
     public boolean showsSubtitles() {
         return showsSubtitles;
-    }
-
-    public boolean sendsImages() {
-        return sendsImages;
     }
 
     public boolean showsGestureText() {
@@ -88,14 +72,6 @@ public enum SessionMode {
      */
     public boolean expectsInboundFrames() {
         return showsSubtitles || showsGestureText;
-    }
-
-    /**
-     * The role → payload-kind mapping. Null-safe: a missing mode maps to {@code null}
-     * rather than throwing, so a caller can guard on it.
-     */
-    public static PayloadKind payloadKindFor(SessionMode mode) {
-        return mode == null ? null : mode.payloadKind;
     }
 
     /** Parses the value persisted by the chooser, or {@code null} when absent/unknown. */

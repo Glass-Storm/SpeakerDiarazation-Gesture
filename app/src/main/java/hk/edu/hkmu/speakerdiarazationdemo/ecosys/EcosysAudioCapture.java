@@ -110,7 +110,12 @@ public final class EcosysAudioCapture implements AutoCloseable {
         short[] buffer = new short[READ_SAMPLES];
         while (capturing && audioRecord != null) {
             int read = audioRecord.read(buffer, 0, buffer.length);
-            if (read <= 0) {
+            // A negative read is a persistent error that would busy-spin; stop capture.
+            if (read < 0) {
+                Log.w(TAG, "AudioRecord read failed: " + read);
+                break;
+            }
+            if (read == 0) {
                 continue;
             }
             byte[] pcm = toLittleEndianPcm16(buffer, read);

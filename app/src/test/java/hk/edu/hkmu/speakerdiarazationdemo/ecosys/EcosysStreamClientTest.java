@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 public class EcosysStreamClientTest {
 
@@ -120,6 +121,55 @@ public class EcosysStreamClientTest {
 
         assertTrue("client should report a disconnect on transport loss",
                 disconnected.await(5, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void framesResumeAfterReconnect() throws Exception {
+        RecordingStreamService firstServer = startServer();
+        CountDownLatch disconnected = new CountDownLatch(1);
+        client = new EcosysStreamClient(inProcessFactory(), "glasses-test-id", DeviceRole.DEVICE_ROLE_GLASS);
+        client.addListener(new EcosysStreamClient.Listener() {
+            @Override
+            public void onConnected() {
+            }
+
+            @Override
+            public void onFrame(StreamFrame frame) {
+            }
+
+            @Override
+            public void onDisconnected(Throwable cause) {
+                disconnected.countDown();
+            }
+        });
+        client.start();
+        assertTrue("initial session should bind the device", await(() -> !firstServer.received.isEmpty()));
+
+        server.shutdownNow();
+        assertTrue("client should report a disconnect on transport loss",
+                disconnected.await(5, TimeUnit.SECONDS));
+        server.awaitTermination(5, TimeUnit.SECONDS);
+
+        RecordingStreamService secondServer = startServer();
+        assertTrue("client should rebind once the hub returns",
+                await(() -> !secondServer.received.isEmpty()));
+
+        client.send(StreamFrame.newBuilder().setTranscript("after-reconnect").build());
+        assertTrue("frames should resume on the rebound stream", await(() ->
+                secondServer.received.stream().anyMatch(frame ->
+                        frame.getPayloadCase() == StreamFrame.PayloadCase.TRANSCRIPT
+                                && "after-reconnect".equals(frame.getTranscript()))));
+    }
+
+    private static boolean await(BooleanSupplier condition) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000L;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.getAsBoolean()) {
+                return true;
+            }
+            Thread.sleep(20L);
+        }
+        return condition.getAsBoolean();
     }
 
     private RecordingStreamService startServer() throws IOException {
