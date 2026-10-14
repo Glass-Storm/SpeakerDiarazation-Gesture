@@ -42,8 +42,12 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import hk.edu.hkmu.speakerdiarazationdemo.EnrolledSpeakerStore;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysStreamClient;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionMode;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionModeStore;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SpeakerColourMap;
+import ecosys.v1.StreamFrame;
+import ecosys.v1.StreamResult;
 import hk.edu.hkmu.speakerdiarazationdemo.models.AppConfig;
 import hk.edu.hkmu.speakerdiarazationdemo.models.EnrolledSpeaker;
 import hk.edu.hkmu.speakerdiarazationdemo.models.TranscriptResult;
@@ -61,6 +65,12 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     /** Carries the chosen {@link SessionMode} name from RoleChooserActivity to this screen. */
     public static final String EXTRA_SESSION_MODE = "extra_session_mode";
+    /** Optional hub-host override (tools/tests); defaults to the SoftAP gateway. */
+    public static final String EXTRA_HUB_HOST = "extra_hub_host";
+    /** The phone is the SoftAP, so the hub is reachable at the gateway until T22 auto-detects it. */
+    private static final String DEFAULT_HUB_HOST = "192.168.43.1";
+    private static final String ECOSYS_DEVICE_ID = "glasses";
+    private static final String UNKNOWN_SPEAKER_DISPLAY = "Unknown";
     private static final int PERMISSION_REQUEST_AUDIO = 100;
     private static final int PERMISSION_REQUEST_CAMERA = 101;
     private static final String PREFS_NAME = "app_settings";
@@ -88,6 +98,8 @@ public class MainActivity extends AppCompatActivity {
     
     private AudioRecorder audioRecorder;
     private SpeechmaticsClient speechmaticsClient;
+    private EcosysStreamClient ecosysClient;
+    private String hubHost;
     private TranscriptManager transcriptManager;
     private GestureBackgroundRunner gestureRunner;
     private boolean sttConnected = false;
@@ -140,6 +152,10 @@ public class MainActivity extends AppCompatActivity {
         
         preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        hubHost = getIntent().getStringExtra(EXTRA_HUB_HOST);
+        if (TextUtils.isEmpty(hubHost)) {
+            hubHost = DEFAULT_HUB_HOST;
+        }
 
         initViews();
         initSpeakerColors();
@@ -907,6 +923,10 @@ public class MainActivity extends AppCompatActivity {
 
         startGestureIfEnabled();
 
+        if (sessionMode != null && sessionMode.showsSubtitles()) {
+            startEcosysStream();
+        }
+
         transcriptManager = new TranscriptManager(this, config, new TranscriptManager.TranscriptCallback() {
             @Override
             public void onTranscriptUpdate(TranscriptResult result, boolean shouldAppend) {
@@ -1102,6 +1122,8 @@ public class MainActivity extends AppCompatActivity {
             speechmaticsClient.disconnect();
             speechmaticsClient = null;
         }
+
+        stopEcosysStream();
         
         if (showSuccessToast && wasRecording) {
             Toast.makeText(this, "錄音已停止並保存", Toast.LENGTH_SHORT).show();
@@ -1141,27 +1163,72 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        // 创建新的框框
+        addBubble(speakerName, color, content.trim());
+        lastDisplayedSpeaker = speakerName;
+    }
+
+    private void renderSubtitleResult(StreamResult result) {
+        if (result == null) {
+            return;
+        }
+        String content = result.getText();
+        if (content == null || content.trim().isEmpty()) {
+            return;
+        }
+        String label = result.getSpeakerLabel();
+        String displayName = TextUtils.isEmpty(label) || label.trim().isEmpty()
+                ? UNKNOWN_SPEAKER_DISPLAY
+                : label.trim();
+        addBubble(displayName, SpeakerColourMap.colourFor(label), content.trim());
+        lastDisplayedSpeaker = displayName;
+    }
+
+    private void startEcosysStream() {
+        if (ecosysClient != null) {
+            return;
+        }
+        ecosysClient = new EcosysStreamClient(hubHost, EcosysStreamClient.DEFAULT_HUB_PORT, ECOSYS_DEVICE_ID);
+        ecosysClient.addListener(new EcosysStreamClient.Listener() {
+            @Override
+            public void onConnected() {
+            }
+
+            @Override
+            public void onFrame(StreamFrame frame) {
+                if (frame == null || frame.getPayloadCase() != StreamFrame.PayloadCase.RESULT) {
+                    return;
+                }
+                StreamResult result = frame.getResult();
+                runOnUiThread(() -> renderSubtitleResult(result));
+            }
+
+            @Override
+            public void onDisconnected(Throwable cause) {
+            }
+        });
+        ecosysClient.start();
+    }
+
+    private void stopEcosysStream() {
+        if (ecosysClient != null) {
+            ecosysClient.close();
+            ecosysClient = null;
+        }
+    }
+
+    private TextView addBubble(String speakerName, int color, String content) {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.HORIZONTAL);
         container.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
         container.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        
-        // 半透明灰色背景（微信风格）
-        int bgColor = Color.parseColor("#E6404040"); // 40% 透明度的灰色
-        container.setBackgroundColor(bgColor);
-        
-        // 圆角（微信风格，不要太圆）
-        float cornerRadius = dpToPx(6);
-        container.setElevation(0);
-        
-        // 使用 GradientDrawable 实现圆角
+
+        int bgColor = Color.parseColor("#E6404040");
         android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
         drawable.setColor(bgColor);
-        drawable.setCornerRadius(cornerRadius);
+        drawable.setCornerRadius(dpToPx(6));
         container.setBackground(drawable);
-        
-        // 底部边距
+        container.setElevation(0);
+
         LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1169,7 +1236,6 @@ public class MainActivity extends AppCompatActivity {
         containerParams.setMargins(0, 0, 0, dpToPx(8));
         container.setLayoutParams(containerParams);
 
-        // 说话者标签
         TextView speakerLabel = new TextView(this);
         speakerLabel.setText(speakerName + "：");
         speakerLabel.setTextColor(color);
@@ -1182,9 +1248,8 @@ public class MainActivity extends AppCompatActivity {
         speakerParams.setMargins(0, 0, dpToPx(4), 0);
         speakerLabel.setLayoutParams(speakerParams);
 
-        // 内容文字
         TextView contentView = new TextView(this);
-        contentView.setText(content.trim());
+        contentView.setText(content);
         contentView.setTextColor(Color.WHITE);
         contentView.setTextSize(TypedValue.COMPLEX_UNIT_SP, getSavedFontSize());
         contentView.setId(R.id.transcript_text_view);
@@ -1199,7 +1264,13 @@ public class MainActivity extends AppCompatActivity {
         container.addView(contentView);
         container.setTag(R.id.transcript_text_view, contentView);
 
-        // 添加到 ScrollView
+        LinearLayout scrollContent = scrollContentOrCreate();
+        scrollContent.addView(container);
+        scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+        return contentView;
+    }
+
+    private LinearLayout scrollContentOrCreate() {
         LinearLayout scrollContent = (LinearLayout) scrollView.getChildAt(0);
         if (scrollContent == null) {
             scrollContent = new LinearLayout(this);
@@ -1207,12 +1278,7 @@ public class MainActivity extends AppCompatActivity {
             scrollContent.setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(140));
             scrollView.addView(scrollContent);
         }
-        scrollContent.addView(container);
-
-        lastDisplayedSpeaker = speakerName;
-        
-        // Auto scroll to bottom
-        scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+        return scrollContent;
     }
 
     private int dpToPx(int dp) {
@@ -1312,6 +1378,7 @@ public class MainActivity extends AppCompatActivity {
         }
         stopGesture();
         shutdownGestureTts();
+        stopEcosysStream();
     }
 
     @Override
