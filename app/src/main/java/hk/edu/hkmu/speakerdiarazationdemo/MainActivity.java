@@ -41,7 +41,9 @@ import android.speech.tts.UtteranceProgressListener;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import com.google.protobuf.ByteString;
 import hk.edu.hkmu.speakerdiarazationdemo.EnrolledSpeakerStore;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysAudioCapture;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysStreamClient;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.GestureText;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.Pcm16;
@@ -102,6 +104,7 @@ public class MainActivity extends AppCompatActivity {
     private AudioRecorder audioRecorder;
     private SpeechmaticsClient speechmaticsClient;
     private EcosysStreamClient ecosysClient;
+    private EcosysAudioCapture ecosysAudioCapture;
     private PcmPlayer pcmPlayer;
     private String hubHost;
     private TranscriptManager transcriptManager;
@@ -1234,6 +1237,46 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         ecosysClient.start();
+
+        // 聽障 streams mic audio UP to the hub; 健全 must never upload audio.
+        maybeStartAudioCapture();
+    }
+
+    /**
+     * Starts microphone capture → {@code audio_pcm16_16k} frames in 聽障 ({@link SessionMode#DEAF})
+     * mode only. A denied mic permission is surfaced as a message and never crashes.
+     */
+    private void maybeStartAudioCapture() {
+        if (ecosysAudioCapture != null || sessionMode == null || !sessionMode.sendsAudio()) {
+            return;
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "需要麥克風權限才能傳送語音字幕", Toast.LENGTH_LONG).show();
+            checkPermissions();
+            return;
+        }
+        EcosysAudioCapture capture = new EcosysAudioCapture(this::sendAudioFrame);
+        if (capture.start()) {
+            ecosysAudioCapture = capture;
+        } else {
+            Toast.makeText(this, "無法啟動麥克風錄音", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** Sends one framed mic payload, dropping it only when the stream is momentarily down. */
+    private void sendAudioFrame(byte[] pcm) {
+        EcosysStreamClient client = ecosysClient;
+        if (client == null || pcm == null || pcm.length == 0) {
+            return;
+        }
+        try {
+            client.send(StreamFrame.newBuilder()
+                    .setAudioPcm1616K(ByteString.copyFrom(pcm))
+                    .build());
+        } catch (IllegalStateException notConnected) {
+            Log.d(TAG, "dropping audio frame: stream not connected");
+        }
     }
 
     /** Shows a hub-recognized gesture in the overlay; the audio arrives as a separate {@code tts_audio} frame. */
@@ -1265,6 +1308,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void stopEcosysStream() {
+        if (ecosysAudioCapture != null) {
+            ecosysAudioCapture.close();
+            ecosysAudioCapture = null;
+        }
         if (ecosysClient != null) {
             ecosysClient.close();
             ecosysClient = null;
