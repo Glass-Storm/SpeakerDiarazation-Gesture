@@ -81,9 +81,6 @@ dependencies {
     implementation(libs.protobuf.javalite)
     implementation(libs.protobuf.kotlin.lite)
 
-    // OkHttp for WebSocket
-    implementation("com.squareup.okhttp3:okhttp:4.10.0")
-    
     // Gson for JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")
     

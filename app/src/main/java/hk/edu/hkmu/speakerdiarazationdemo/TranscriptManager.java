@@ -556,7 +556,7 @@ public class TranscriptManager {
             FileWriter writer = new FileWriter(file);
 
             writer.write("============================================================\n");
-            writer.write("Speechmatics 粵語轉寫記錄\n");
+            writer.write("語音轉寫記錄\n");
             SimpleDateFormat fullSdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
             writer.write("生成時間: " + fullSdf.format(new Date()) + "\n");
             writer.write("============================================================\n\n");

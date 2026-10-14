@@ -7,12 +7,12 @@
 ![Android](https://img.shields.io/badge/Android-API%2028%2B-3DDC84?logo=android&logoColor=white)
 ![Java](https://img.shields.io/badge/Java-11-blue)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF?logo=kotlin&logoColor=white)
-![Speechmatics](https://img.shields.io/badge/Speechmatics-Realtime-orange)
+![gRPC](https://img.shields.io/badge/gRPC-ecosys.v1-244c5a)
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-Gesture%20recognition-4285F4)
 
 ![INMO Air 3 smart glasses](inmoair3.png)
 
-[Overview](#overview) · [Features](#features) · [Quick start](#quick-start) · [Configuration](#configuration) · [Troubleshooting](#troubleshooting)
+[Overview](#overview) · [Features](#features) · [Quick start](#quick-start) · [Architecture](#architecture) · [Troubleshooting](#troubleshooting)
 
 </div>
 
@@ -20,38 +20,43 @@
 
 ## Overview
 
-This project is an Android demo for a smart-glasses-style subtitle workflow. It records microphone audio, streams it to Speechmatics for real-time transcription and speaker diarization, then displays the transcript with speaker labels and colors.
+This project is an Android demo for a smart-glasses-style subtitle workflow. On
+start-up the user picks a role — 聽障 (deaf) or 健全 (hearing). The app then opens
+a plaintext `ecosys.v1` gRPC stream to the phone hub (no pairing, no bearer token)
+and exchanges media on it:
 
-The app also integrates a separate MediaPipe gesture-recognition module. While recording, gesture detection can run in the background and optionally announce gesture results through Android Text-to-Speech.
+- **聽障 (deaf)** captures 16 kHz mono PCM16 microphone audio and streams it to the
+  hub, which runs speech-to-text and speaker diarization on-device and returns
+  subtitles tagged with a speaker label/colour.
+- **健全 (hearing)** receives hub-recognised gesture text and hub-synthesized audio
+  from the phone pointed at whoever is signing.
 
-### Recent fixes
-
-- Runtime config injection: API key and region are now entered in Settings, no manual file editing
-- Security hardening: cleartext traffic disabled, backup rules exclude voice data and API key
-- Audio partial-read slicing: recorder now dispatches only the bytes actually written each iteration
-- Gesture recognition: back-camera frames are no longer mirrored, ImageProxy double-close fixed
+The app also integrates a separate MediaPipe gesture-recognition module for local
+gesture detection, and a voiceprint-enrollment screen that records 8 seconds of
+audio and registers a name on the hub.
 
 ## Features
 
-| Feature                 | What it does                                                               | Main files                                                            |
-| ----------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Real-time transcription | Streams 16 kHz mono microphone audio to Speechmatics WebSocket             | `AudioRecorder.java`, `SpeechmaticsClient.java`                       |
-| Speaker diarization     | Separates speakers and maps labels such as `S1`, `S2`, `S3`                | `SpeechmaticsClient.java`, `AppConfig.java`                           |
-| Speaker enrollment      | Records local samples and calls Speechmatics speaker enrollment APIs       | `SpeakerEnrollmentActivity.java`, `SpeechmaticsEnrollmentClient.java` |
-| Subtitle display        | Shows transcript text with speaker color separation                        | `MainActivity.java`, `TranscriptListAdapter.java`                     |
-| Transcript management   | Saves, lists, renames, deletes and reloads transcript text files           | `TranscriptManager.java`, `SettingsActivity.java`                     |
-| Gesture recognition     | Runs MediaPipe gesture recognition from the `:gesture` module              | `gesture/src/main/java/.../GestureBackgroundRunner.kt`                |
-| Text-to-Speech          | Announces gesture output or other configured results                       | `MainActivity.java`, `SettingsActivity.java`                          |
-| Settings screen         | Adjusts language, font size, TTS engine, speaker names and output behavior | `SettingsActivity.java`                                               |
+| Feature                 | What it does                                                          | Main files                                                     |
+| ----------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Role chooser            | Picks the deaf/hearing session that gates payload kind and display    | `RoleChooserActivity.java`, `ecosys/SessionMode.java`          |
+| ecosys stream client    | Opens the hub's `StreamService/OpenStream` bidi stream, no token      | `ecosys/EcosysStreamClient.java`                               |
+| Subtitle display        | Renders hub transcripts with per-speaker colour separation            | `MainActivity.java`, `ecosys/SpeakerColourMap.java`            |
+| Mic audio uplink        | Streams 16 kHz PCM16 audio frames to the hub (聽障 mode)              | `ecosys/EcosysAudioCapture.java`, `ecosys/AudioFraming.java`   |
+| Gesture display + audio | Shows hub gesture text and plays hub-synthesized PCM16 (健全 mode)    | `MainActivity.java`, `ecosys/PcmPlayer.java`                   |
+| Voiceprint enrollment   | Records 8 s, validates the name, sends an `enroll_request` to the hub | `SpeakerEnrollmentActivity.java`, `ecosys/EnrollmentName.java` |
+| Gesture recognition     | Runs MediaPipe gesture recognition from the `:gesture` module         | `gesture/src/main/java/.../GestureBackgroundRunner.kt`         |
+| Transcript management   | Saves, lists, renames, deletes and reloads transcript text files      | `TranscriptManager.java`, `SettingsActivity.java`              |
+| Settings screen         | Adjusts font size, TTS engine, speaker list and transcript management | `SettingsActivity.java`                                        |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Mic[Microphone] --> Recorder[AudioRecorder]
-    Recorder --> Speechmatics[Speechmatics realtime WebSocket]
-    Speechmatics --> Client[SpeechmaticsClient]
-    Client --> UI[MainActivity subtitles]
+    Mic[Microphone] --> Capture[EcosysAudioCapture]
+    Capture -->|audio_pcm16_16k| Hub[Phone hub ecosys.v1 stream]
+    Hub -->|StreamResult text + speaker| UI[MainActivity subtitles]
+    Hub -->|gesture + tts_audio| UI
     UI --> Transcripts[Local transcript files]
 
     Camera[Camera] --> Gesture[MediaPipe gesture module]
@@ -59,19 +64,23 @@ flowchart LR
     Gesture --> TTS[Android Text-to-Speech]
 ```
 
+The hub is the phone-side server of the `ecosys.v1` ecosystem; the wire contract
+is frozen and published by the hub as
+`com.glassstorm.phonemanager:contract`. This app consumes that artifact (from
+Maven local) rather than vendoring the generated bindings.
+
 ## Tech stack
 
-| Area                | Technology                                        |
-| ------------------- | ------------------------------------------------- |
-| App platform        | Android app module `:app`                         |
-| Gesture module      | Android library module `:gesture`                 |
-| Languages           | Java 11, Kotlin 2.1.0                             |
-| Build system        | Gradle, Android Gradle Plugin 8.13.0              |
-| Speech API          | Speechmatics real-time WebSocket and speaker APIs |
-| Networking          | OkHttp 4.10.0                                     |
-| JSON parsing        | Gson 2.10.1                                       |
-| UI                  | AppCompat, Material Components, ConstraintLayout  |
-| Camera and gestures | CameraX 1.4.2, MediaPipe Tasks Vision 0.10.29     |
+| Area                | Technology                                       |
+| ------------------- | ------------------------------------------------ |
+| App platform        | Android app module `:app`                        |
+| Gesture module      | Android library module `:gesture`                |
+| Languages           | Java 11, Kotlin 2.1.0                            |
+| Build system        | Gradle, Android Gradle Plugin 8.13.0             |
+| Transport           | gRPC + protobuf-lite (`ecosys.v1` contract)      |
+| JSON parsing        | Gson 2.10.1                                      |
+| UI                  | AppCompat, Material Components, ConstraintLayout |
+| Camera and gestures | CameraX 1.4.2, MediaPipe Tasks Vision 0.10.29    |
 
 ## Project structure
 
@@ -80,8 +89,9 @@ flowchart LR
 ├── app/                         # Main Android app
 │   └── src/main/
 │       ├── java/hk/edu/hkmu/speakerdiarazationdemo/
+│       │   └── ecosys/          # ecosys.v1 stream client, framing, playback
 │       └── res/raw/
-│           └── config_default.json  # Tracked defaults (placeholder key only)
+│           └── config_default.json  # Tracked defaults (display language)
 ├── gesture/                     # MediaPipe gesture-recognition library module
 │   └── src/main/assets/
 │       └── gesture_recognizer.task
@@ -98,48 +108,28 @@ flowchart LR
   - `compileSdk = 36`
   - `minSdk = 28`
   - `targetSdk = 28`
-- A Speechmatics API key
+- A reachable phone hub on the same local network (the SoftAP gateway, typically
+  `192.168.43.1:50051`)
+- The hub's `ecosys.v1` contract in Maven local (`:contract:publishToMavenLocal`
+  in the hub repo)
 - Android device or emulator with microphone permission
 - Camera permission and camera hardware for gesture mode
 
 ## Configuration
 
-The app uses a two-layer config model:
-
-- **Defaults file** (`app/src/main/res/raw/config_default.json`): shipped with the repo, contains only a placeholder API key. Programmers may edit this to change default values without touching code.
-- **Runtime settings** (in-app): end users enter their API key and select the server region in the app's Settings screen. These persist in app-private SharedPreferences and take effect on the next recording or enrollment.
-
-The defaults file ships with only a placeholder:
+`app/src/main/res/raw/config_default.json` ships only the default display
+language:
 
 ```json
 {
-  "api_key": "YOUR_SPEECHMATICS_API_KEY",
-  "language": "yue",
-  "region": "us",
-  "timeout_seconds": 1.5,
-  "operating_point": "enhanced",
-  "max_delay_mode": "flexible",
-  "enable_partials": true,
-  "diarization": "speaker",
-  "max_speakers": 10,
-  "speaker_sensitivity": 0.6,
-  "end_of_utterance_silence_trigger": 0.8,
-  "audio_filter_volume_threshold": 0,
-  "speaker_names": {
-    "S1": "s1",
-    "S2": "s2",
-    "S3": "s3",
-    "S4": "s4",
-    "S5": "s5"
-  }
+  "language": "yue"
 }
 ```
 
-To set or change the API key and region, open the app and go to **設定 → Speechmatics 連線設定**. Enter your API key, toggle show/hide as needed, and select the region (自動（全球）/歐洲 (eu)/美國 (us)/澳洲 (au)). Changes apply on the next recording or enrollment.
-
-**First run:** recording and enrollment are blocked with a toast until an API key is entered in Settings.
-
-> **Warning:** Never put a real API key into `config_default.json` — that file is committed to the repository. The in-app Settings screen is the only place to enter a real key.
+There is no API key or server region to configure: the hub owns speech-to-text
+and diarization, and every setting is local. Speaker names, font size, and the
+TTS engine are adjusted in the in-app Settings screen
+(**設定** → 字體大小 / TTS 引擎 / 聲紋註冊).
 
 ## Quick start
 
@@ -157,9 +147,9 @@ On macOS or Linux:
 ./gradlew :app:assembleDebug
 ```
 
-On first launch, grant microphone permission. Grant camera permission only if you want to use gesture recognition.
-
-If Android Studio opens the wrong module, select the `app` run configuration before installing the demo.
+4. Enable the phone's hotspot, join the glasses to it, and make sure the hub is
+   serving on the gateway. On first launch, pick a role and grant microphone
+   permission. Grant camera permission only if you want local gesture recognition.
 
 ## Common commands
 
@@ -175,9 +165,13 @@ If Android Studio opens the wrong module, select the `app` run configuration bef
 
 ## Usage notes
 
-- The main screen records audio and displays live subtitles.
-- The settings screen controls language, font size, TTS engine, speaker setup and transcript management.
-- Speaker enrollment records sample audio locally before calling the Speechmatics speaker API.
+- The role chooser decides what the session does: 聽障 sends audio and shows
+  subtitles; 健全 shows gesture text and plays hub audio.
+- The main screen displays live subtitles transcribed by the hub.
+- The settings screen controls font size, TTS engine, speaker setup and transcript
+  management.
+- Speaker enrollment records 8 seconds locally and registers the voiceprint on the
+  hub over the same stream.
 - Saved transcripts are stored in the app-private files directory.
 - Gesture recognition uses `gesture/src/main/assets/gesture_recognizer.task`.
 
@@ -185,8 +179,8 @@ If Android Studio opens the wrong module, select the `app` run configuration bef
 
 | Problem                            | Check                                                                         |
 | ---------------------------------- | ----------------------------------------------------------------------------- |
-| App shows 請先於設定輸入 API 金鑰  | Enter your Speechmatics API key in Settings → Speechmatics 連線設定.          |
-| Speechmatics connection fails      | Check the API key in Settings, the selected region, and network connectivity. |
+| App shows no subtitles             | Confirm the hub is reachable at the SoftAP gateway and the stream is open.    |
+| Cannot connect to the hub          | Join the phone hotspot and confirm the hub is serving on `gateway:50051`.     |
 | No microphone input                | Grant microphone permission and test on a device with microphone hardware.    |
 | Gesture recognition does not start | Grant camera permission and confirm the device has an available camera.       |
 | TTS does not speak                 | Check Android Text-to-Speech settings and installed voice data.               |
@@ -194,10 +188,13 @@ If Android Studio opens the wrong module, select the `app` run configuration bef
 
 ## Security and privacy notes
 
-- Microphone audio is streamed to Speechmatics for transcription.
-- Speaker enrollment audio and transcripts are handled locally by the app.
-- The API key is entered in-app and stored in app-private SharedPreferences, excluded from cloud backup and device transfer. `config_default.json` ships only a placeholder.
-- Cleartext traffic is disabled and backup rules exclude voice samples, transcripts, and speaker data.
+- Microphone audio is streamed over the local hotspot to the phone hub only; no
+  cloud service is contacted.
+- Enrollment audio and transcripts are handled locally by the app; the hub owns
+  the voiceprints.
+- Cleartext traffic is enabled because the v1 LAN stream is plaintext (there is no
+  bearer token or pairing step); backup rules exclude voice samples, transcripts,
+  and speaker data.
 
 ## CI/CD
 
@@ -245,8 +242,6 @@ keytool -genkeypair -v -keystore app/release.keystore \
 git add app/release.keystore
 git commit -m "Add project release keystore"
 ```
-
-Note: the released APK contains the placeholder API key (users enter their own API key in the Settings screen on first run). The real Speechmatics key never leaves your machine.
 
 ## Gesture model
 

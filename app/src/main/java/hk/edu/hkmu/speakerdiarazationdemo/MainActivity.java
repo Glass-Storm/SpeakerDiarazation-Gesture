@@ -101,8 +101,6 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvGestureSpeakingChip;
     private Button btnTestGesture;
     
-    private AudioRecorder audioRecorder;
-    private SpeechmaticsClient speechmaticsClient;
     private EcosysStreamClient ecosysClient;
     private EcosysAudioCapture ecosysAudioCapture;
     private PcmPlayer pcmPlayer;
@@ -113,7 +111,6 @@ public class MainActivity extends AppCompatActivity {
     private TextToSpeech gestureTts;
     private boolean gestureTtsReady = false;
     private boolean gestureTtsSpeaking = false;
-    private boolean pausedMicForTts = false;
     private String pendingGestureToSpeak = null;
     private String lastSpokenGestureLabel = null;
     private long lastSpokenGestureAtMs = 0L;
@@ -665,7 +662,6 @@ public class MainActivity extends AppCompatActivity {
                         uiHandler.post(() -> {
                             gestureTtsSpeaking = true;
                             updateStatusChip();
-                            pauseAudioCaptureForTts();
                         });
                     }
 
@@ -674,7 +670,6 @@ public class MainActivity extends AppCompatActivity {
                         uiHandler.post(() -> {
                             gestureTtsSpeaking = false;
                             updateStatusChip();
-                            resumeAudioCaptureAfterTts();
                             abandonGestureTtsFocus();
                         });
                     }
@@ -684,7 +679,6 @@ public class MainActivity extends AppCompatActivity {
                         uiHandler.post(() -> {
                             gestureTtsSpeaking = false;
                             updateStatusChip();
-                            resumeAudioCaptureAfterTts();
                             abandonGestureTtsFocus();
                         });
                     }
@@ -729,39 +723,6 @@ public class MainActivity extends AppCompatActivity {
         } catch (Throwable ignored) {}
     }
 
-    private void pauseAudioCaptureForTts() {
-        if (!isRecording || isPaused) {
-            return;
-        }
-        if (pausedMicForTts) {
-            return;
-        }
-        if (audioRecorder != null) {
-            try {
-                audioRecorder.stopRecording();
-                audioRecorder.release();
-            } catch (Throwable ignored) {
-            } finally {
-                audioRecorder = null;
-            }
-            pausedMicForTts = true;
-        }
-    }
-
-    private void resumeAudioCaptureAfterTts() {
-        if (!pausedMicForTts) {
-            return;
-        }
-        if (!isRecording || isPaused) {
-            return;
-        }
-        if (speechmaticsClient == null || !speechmaticsClient.isConnected()) {
-            return;
-        }
-        pausedMicForTts = false;
-        startAudioRecording();
-    }
-
     private void speakGestureLabel(String label) {
         if (label == null) {
             return;
@@ -787,8 +748,6 @@ public class MainActivity extends AppCompatActivity {
             updateStatusChip();
             return;
         }
-        // Some devices won't play TTS while AudioRecord is active; stop mic capture first.
-        pauseAudioCaptureForTts();
         // Try to request audio focus, but don't hard-block speaking if it's not granted on this device.
         requestGestureTtsFocus();
 
@@ -813,8 +772,6 @@ public class MainActivity extends AppCompatActivity {
         lastSpokenGestureLabel = null;
         lastSpokenGestureAtMs = 0L;
         updateStatusChip();
-        resumeAudioCaptureAfterTts();
-        pausedMicForTts = false;
         abandonGestureTtsFocus();
     }
 
@@ -883,11 +840,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        if (!RuntimeConfigStore.hasApiKey(this)) {
-            Toast.makeText(this, "請先於設定 → Speechmatics 連線設定輸入 Speechmatics API 金鑰", Toast.LENGTH_LONG).show();
-            return;
-        }
-
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this, "請授予麥克風權限", Toast.LENGTH_SHORT).show();
@@ -951,50 +903,8 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         transcriptManager.setMutedSpeakers(mutedSpeakerTokens);
-
-        speechmaticsClient = new SpeechmaticsClient(
-                config,
-                transcriptManager,
-                new SpeechmaticsClient.SpeechmaticsCallback() {
-                    @Override
-                    public void onConnected() {
-                        runOnUiThread(() -> {
-                            Toast.makeText(MainActivity.this, "已連接", Toast.LENGTH_SHORT).show();
-                            sttConnected = true;
-                            btnRecord.setEnabled(true);
-                            partialSpeaker = null;
-                            if (!isPaused) {
-                                startAudioRecording();
-                            }
-                            refreshPauseButtonState();
-                            updateStatusChip();
-                        });
-                    }
-
-                    @Override
-                    public void onDisconnected() {
-                        runOnUiThread(() -> {
-                            Toast.makeText(MainActivity.this, "已斷開連接", Toast.LENGTH_SHORT).show();
-                            isPaused = false;
-                            sttConnected = false;
-                            refreshPauseButtonState();
-                            updateStatusChip();
-                        });
-                    }
-
-                    @Override
-                    public void onError(String error) {
-                        runOnUiThread(() -> {
-                            Toast.makeText(MainActivity.this, "錯誤: " + error, Toast.LENGTH_LONG).show();
-                            stopRecording(false);
-                        });
-                    }
-                }
-        );
-
-        speechmaticsClient.setEnrolledSpeakers(activeEnrolledSpeakers);
-        speechmaticsClient.connect();
     }
+
     private boolean isNetworkAvailable() {
         ConnectivityManager connectivityManager =
                 (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
@@ -1021,25 +931,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void startAudioRecording() {
-        try {
-            audioRecorder = new AudioRecorder(data -> {
-                if (speechmaticsClient != null && speechmaticsClient.isConnected()) {
-                    speechmaticsClient.sendAudio(data);
-                }
-            });
-            audioRecorder.startRecording();
-            Log.d(TAG, "Audio recording started");
-            isPaused = false;
-            refreshPauseButtonState();
-            updateStatusChip();
-        } catch (IllegalStateException e) {
-            Log.e(TAG, "Failed to start audio recording", e);
-            Toast.makeText(this, "此裝置不支援目前的錄音設定", Toast.LENGTH_LONG).show();
-            stopRecording(false);
-        }
-    }
-
+    /** Pauses/resumes the 聽障 mic uplink owned by the ecosys stream; 健全 sends no mic. */
     private void togglePauseRecording() {
         if (!isRecording) {
             return;
@@ -1047,35 +939,28 @@ public class MainActivity extends AppCompatActivity {
         if (!isPaused) {
             pauseAudioCapture();
         } else {
-            if (speechmaticsClient == null || !speechmaticsClient.isConnected()) {
-                Toast.makeText(this, "尚未連線，無法恢復錄音", Toast.LENGTH_SHORT).show();
-                return;
-            }
             resumeAudioCapture();
         }
     }
 
     private void pauseAudioCapture() {
-        if (audioRecorder != null) {
-            audioRecorder.stopRecording();
-            audioRecorder.release();
-            audioRecorder = null;
+        if (ecosysAudioCapture != null) {
+            ecosysAudioCapture.close();
+            ecosysAudioCapture = null;
         }
         isPaused = true;
-        if (transcriptManager != null) {
-            transcriptManager.handleEndOfUtterance();
-        }
         Toast.makeText(this, "暫停錄音", Toast.LENGTH_SHORT).show();
         refreshPauseButtonState();
         updateStatusChip();
     }
 
     private void resumeAudioCapture() {
-        if (speechmaticsClient == null || !speechmaticsClient.isConnected()) {
-            Toast.makeText(this, "尚未連線至服務器", Toast.LENGTH_SHORT).show();
+        if (ecosysClient == null) {
+            Toast.makeText(this, "尚未連線至中樞", Toast.LENGTH_SHORT).show();
             return;
         }
-        startAudioRecording();
+        isPaused = false;
+        maybeStartAudioCapture();
         Toast.makeText(this, "恢復錄音", Toast.LENGTH_SHORT).show();
         updateStatusChip();
     }
@@ -1089,7 +974,7 @@ public class MainActivity extends AppCompatActivity {
             btnPauseRecording.setEnabled(false);
         } else {
             btnPauseRecording.setText(isPaused ? "繼續錄音" : "暫停錄音");
-            boolean canResume = speechmaticsClient != null && speechmaticsClient.isConnected();
+            boolean canResume = ecosysClient != null;
             btnPauseRecording.setEnabled(!isPaused || (isPaused && canResume));
         }
     }
@@ -1111,23 +996,9 @@ public class MainActivity extends AppCompatActivity {
         updateStatusChip();
         stopGesture();
 
-        // Stop audio recording
-        if (audioRecorder != null) {
-            audioRecorder.stopRecording();
-            audioRecorder.release();
-            audioRecorder = null;
-        }
-        
-        // Flush remaining transcripts
         if (transcriptManager != null) {
             transcriptManager.flush();
             transcriptManager.saveToFile();
-        }
-        
-        // Disconnect WebSocket
-        if (speechmaticsClient != null) {
-            speechmaticsClient.disconnect();
-            speechmaticsClient = null;
         }
 
         stopEcosysStream();
@@ -1198,6 +1069,12 @@ public class MainActivity extends AppCompatActivity {
         ecosysClient.addListener(new EcosysStreamClient.Listener() {
             @Override
             public void onConnected() {
+                runOnUiThread(() -> {
+                    sttConnected = true;
+                    btnRecord.setEnabled(true);
+                    refreshPauseButtonState();
+                    updateStatusChip();
+                });
             }
 
             @Override
@@ -1234,6 +1111,11 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onDisconnected(Throwable cause) {
+                runOnUiThread(() -> {
+                    sttConnected = false;
+                    refreshPauseButtonState();
+                    updateStatusChip();
+                });
             }
         });
         ecosysClient.start();
