@@ -42,6 +42,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import hk.edu.hkmu.speakerdiarazationdemo.EnrolledSpeakerStore;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionMode;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionModeStore;
 import hk.edu.hkmu.speakerdiarazationdemo.models.AppConfig;
 import hk.edu.hkmu.speakerdiarazationdemo.models.EnrolledSpeaker;
 import hk.edu.hkmu.speakerdiarazationdemo.models.TranscriptResult;
@@ -57,6 +59,8 @@ import hk.edu.hkmu.speakerdiarazationdemo.SettingsActivity;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
+    /** Carries the chosen {@link SessionMode} name from RoleChooserActivity to this screen. */
+    public static final String EXTRA_SESSION_MODE = "extra_session_mode";
     private static final int PERMISSION_REQUEST_AUDIO = 100;
     private static final int PERMISSION_REQUEST_CAMERA = 101;
     private static final String PREFS_NAME = "app_settings";
@@ -105,6 +109,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean isPaused = false;
     private SharedPreferences preferences;
     private AppConfig config;
+    private SessionMode sessionMode;
 
     private Map<String, Integer> speakerColors = new HashMap<>();
     private final List<EnrolledSpeaker> activeEnrolledSpeakers = new ArrayList<>();
@@ -122,6 +127,15 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        sessionMode = SessionModeStore.load(this);
+        if (sessionMode == null) {
+            Toast.makeText(this, "請先選擇身份才能開始", Toast.LENGTH_LONG).show();
+            startActivity(new Intent(this, RoleChooserActivity.class));
+            finish();
+            return;
+        }
+
         setContentView(R.layout.activity_main);
         
         preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
@@ -134,6 +148,11 @@ public class MainActivity extends AppCompatActivity {
         applyFontSize();
         checkPermissions();
         
+    }
+
+    /** The deaf/hearing role chosen on the first screen; gates payload kind and display. */
+    public SessionMode getSessionMode() {
+        return sessionMode;
     }
 
     @Override
