@@ -66,7 +66,21 @@ dependencies {
 
     // Gesture recognition module (Kotlin)
     implementation(project(":gesture"))
-    
+
+    // The hub's FROZEN `ecosys.v1` contract (phone-manager). `:app` is the one
+    // module that consumes it; the eventual ecosys client (T15) will live here.
+    // The artifact was generated in protobuf-LITE mode, so its runtime is
+    // protobuf-javalite/grpc-protobuf-lite — NEVER full protobuf-java or
+    // grpc-protobuf (mixing the two corrupts the wire serializer at runtime).
+    // Declared explicitly (in addition to the contract's transitive POM deps) so
+    // the runtime is visible and pinned to the hub's exact versions.
+    implementation(libs.ecosys.contract)
+    implementation(libs.grpc.stub)
+    implementation(libs.grpc.protobuf.lite)
+    implementation(libs.grpc.kotlin.stub)
+    implementation(libs.protobuf.javalite)
+    implementation(libs.protobuf.kotlin.lite)
+
     // OkHttp for WebSocket
     implementation("com.squareup.okhttp3:okhttp:4.10.0")
     

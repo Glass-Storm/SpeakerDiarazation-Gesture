@@ -9,6 +9,16 @@ material = "1.10.0"
 activity = "1.11.0"
 constraintlayout = "2.1.4"
 
+# The hub's `ecosys.v1` contract artifact and its LITE runtime. These pins MUST
+# match the hub's `gradle/libs.versions.toml` (`protoc`, `protobufJavaLite`/
+# `protobufKotlinLite`, `grpc`, `grpcKotlin`) so the generated bindings link
+# against the same protobuf-lite. Do NOT swap any of these for the full
+# `protobuf-java` / `grpc-protobuf`: `:contract` is generated in `lite` mode.
+ecosysContract = "1.1.0"
+protobufLite = "3.25.9"
+grpc = "1.84.0"
+grpcKotlin = "1.5.0"
+
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
@@ -17,6 +27,14 @@ appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "a
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 activity = { group = "androidx.activity", name = "activity", version.ref = "activity" }
 constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
+
+# `ecosys.v1` contract + its protobuf-LITE / gRPC runtime, matching the hub.
+ecosys-contract = { group = "com.glassstorm.phonemanager", name = "contract", version.ref = "ecosysContract" }
+grpc-stub = { group = "io.grpc", name = "grpc-stub", version.ref = "grpc" }
+grpc-protobuf-lite = { group = "io.grpc", name = "grpc-protobuf-lite", version.ref = "grpc" }
+grpc-kotlin-stub = { group = "io.grpc", name = "grpc-kotlin-stub", version.ref = "grpcKotlin" }
+protobuf-javalite = { group = "com.google.protobuf", name = "protobuf-javalite", version.ref = "protobufLite" }
+protobuf-kotlin-lite = { group = "com.google.protobuf", name = "protobuf-kotlin-lite", version.ref = "protobufLite" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
