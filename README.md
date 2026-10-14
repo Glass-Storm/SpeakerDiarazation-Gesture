@@ -37,17 +37,18 @@ audio and registers a name on the hub.
 
 ## Features
 
-| Feature                 | What it does                                                          | Main files                                                     |
-| ----------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Role chooser            | Picks the deaf/hearing session that gates payload kind and display    | `RoleChooserActivity.java`, `ecosys/SessionMode.java`          |
-| ecosys stream client    | Opens the hub's `StreamService/OpenStream` bidi stream, no token      | `ecosys/EcosysStreamClient.java`                               |
-| Subtitle display        | Renders hub transcripts with per-speaker colour separation            | `MainActivity.java`, `ecosys/SpeakerColourMap.java`            |
-| Mic audio uplink        | Streams 16 kHz PCM16 audio frames to the hub (聽障 mode)              | `ecosys/EcosysAudioCapture.java`, `ecosys/AudioFraming.java`   |
-| Gesture display + audio | Shows hub gesture text and plays hub-synthesized PCM16 (健全 mode)    | `MainActivity.java`, `ecosys/PcmPlayer.java`                   |
-| Voiceprint enrollment   | Records 8 s, validates the name, sends an `enroll_request` to the hub | `SpeakerEnrollmentActivity.java`, `ecosys/EnrollmentName.java` |
-| Gesture recognition     | Runs MediaPipe gesture recognition from the `:gesture` module         | `gesture/src/main/java/.../GestureBackgroundRunner.kt`         |
-| Transcript management   | Saves, lists, renames, deletes and reloads transcript text files      | `TranscriptManager.java`, `SettingsActivity.java`              |
-| Settings screen         | Adjusts font size, TTS engine, speaker list and transcript management | `SettingsActivity.java`                                        |
+| Feature                 | What it does                                                           | Main files                                                     |
+| ----------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Role chooser            | Picks the deaf/hearing session that gates payload kind and display     | `RoleChooserActivity.java`, `ecosys/SessionMode.java`          |
+| Manual connect          | Detects the SoftAP gateway as the hub host and shows connection status | `ConnectActivity.java`, `ecosys/HubConnection.java`            |
+| ecosys stream client    | Opens the hub's `StreamService/OpenStream` bidi stream, no token       | `ecosys/EcosysStreamClient.java`                               |
+| Subtitle display        | Renders hub transcripts with per-speaker colour separation             | `MainActivity.java`, `ecosys/SpeakerColourMap.java`            |
+| Mic audio uplink        | Streams 16 kHz PCM16 audio frames to the hub (聽障 mode)               | `ecosys/EcosysAudioCapture.java`, `ecosys/AudioFraming.java`   |
+| Gesture display + audio | Shows hub gesture text and plays hub-synthesized PCM16 (健全 mode)     | `MainActivity.java`, `ecosys/PcmPlayer.java`                   |
+| Voiceprint enrollment   | Records 8 s, validates the name, sends an `enroll_request` to the hub  | `SpeakerEnrollmentActivity.java`, `ecosys/EnrollmentName.java` |
+| Gesture recognition     | Runs MediaPipe gesture recognition from the `:gesture` module          | `gesture/src/main/java/.../GestureBackgroundRunner.kt`         |
+| Transcript management   | Saves, lists, renames, deletes and reloads transcript text files       | `TranscriptManager.java`, `SettingsActivity.java`              |
+| Settings screen         | Adjusts font size, TTS engine, speaker list and transcript management  | `SettingsActivity.java`                                        |
 
 ## Architecture
 
@@ -147,9 +148,11 @@ On macOS or Linux:
 ./gradlew :app:assembleDebug
 ```
 
-4. Enable the phone's hotspot, join the glasses to it, and make sure the hub is
-   serving on the gateway. On first launch, pick a role and grant microphone
-   permission. Grant camera permission only if you want local gesture recognition.
+4. Enable the phone's hotspot and join the glasses to it **by hand**. On first
+   launch pick a role (聽障 / 健全); the connect screen then auto-detects the
+   hotspot gateway as the hub host and shows the connection status. Grant
+   microphone permission; grant camera permission only if you want local gesture
+   recognition.
 
 ## Common commands
 
@@ -167,6 +170,8 @@ On macOS or Linux:
 
 - The role chooser decides what the session does: 聽障 sends audio and shows
   subtitles; 健全 shows gesture text and plays hub audio.
+- The connect screen detects the default gateway (the phone hotspot AP) as the
+  hub host; there is no mDNS and no BLE.
 - The main screen displays live subtitles transcribed by the hub.
 - The settings screen controls font size, TTS engine, speaker setup and transcript
   management.
