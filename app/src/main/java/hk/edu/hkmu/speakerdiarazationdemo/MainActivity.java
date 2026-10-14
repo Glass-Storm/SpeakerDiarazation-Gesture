@@ -43,6 +43,9 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import hk.edu.hkmu.speakerdiarazationdemo.EnrolledSpeakerStore;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysStreamClient;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.GestureText;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.Pcm16;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.PcmPlayer;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionMode;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionModeStore;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SpeakerColourMap;
@@ -99,6 +102,7 @@ public class MainActivity extends AppCompatActivity {
     private AudioRecorder audioRecorder;
     private SpeechmaticsClient speechmaticsClient;
     private EcosysStreamClient ecosysClient;
+    private PcmPlayer pcmPlayer;
     private String hubHost;
     private TranscriptManager transcriptManager;
     private GestureBackgroundRunner gestureRunner;
@@ -923,7 +927,7 @@ public class MainActivity extends AppCompatActivity {
 
         startGestureIfEnabled();
 
-        if (sessionMode != null && sessionMode.showsSubtitles()) {
+        if (sessionMode != null && sessionMode.expectsInboundFrames()) {
             startEcosysStream();
         }
 
@@ -1195,11 +1199,34 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onFrame(StreamFrame frame) {
-                if (frame == null || frame.getPayloadCase() != StreamFrame.PayloadCase.RESULT) {
+                if (frame == null) {
                     return;
                 }
-                StreamResult result = frame.getResult();
-                runOnUiThread(() -> renderSubtitleResult(result));
+                switch (frame.getPayloadCase()) {
+                    case RESULT:
+                        if (sessionMode != null && sessionMode.showsSubtitles()) {
+                            StreamResult result = frame.getResult();
+                            runOnUiThread(() -> renderSubtitleResult(result));
+                        }
+                        break;
+                    case GESTURE:
+                        if (sessionMode != null && sessionMode.expectsGestureAudio()) {
+                            String text = GestureText.displayText(
+                                    frame.getGesture().getText(),
+                                    frame.getGesture().getLabel());
+                            if (text != null) {
+                                runOnUiThread(() -> showInboundGesture(text));
+                            }
+                        }
+                        break;
+                    case TTS_AUDIO:
+                        if (sessionMode != null && sessionMode.expectsGestureAudio()) {
+                            playInboundAudio(frame.getTtsAudio().getPcm1616K().toByteArray());
+                        }
+                        break;
+                    default:
+                        break;
+                }
             }
 
             @Override
@@ -1209,11 +1236,40 @@ public class MainActivity extends AppCompatActivity {
         ecosysClient.start();
     }
 
+    /** Shows a hub-recognized gesture in the overlay; the audio arrives as a separate {@code tts_audio} frame. */
+    private void showInboundGesture(String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        updateGestureLabel(text);
+        showGestureOverlay();
+        scheduleGestureOverlayHide();
+    }
+
+    /** Plays a hub-synthesized {@code tts_audio} payload off the UI thread, ignoring malformed frames. */
+    private void playInboundAudio(byte[] pcm) {
+        if (!Pcm16.isPlayable(pcm)) {
+            return;
+        }
+        if (pcmPlayer == null) {
+            pcmPlayer = new PcmPlayer();
+        }
+        pcmPlayer.play(pcm);
+    }
+
+    private void stopPcmPlayer() {
+        if (pcmPlayer != null) {
+            pcmPlayer.close();
+            pcmPlayer = null;
+        }
+    }
+
     private void stopEcosysStream() {
         if (ecosysClient != null) {
             ecosysClient.close();
             ecosysClient = null;
         }
+        stopPcmPlayer();
     }
 
     private TextView addBubble(String speakerName, int color, String content) {

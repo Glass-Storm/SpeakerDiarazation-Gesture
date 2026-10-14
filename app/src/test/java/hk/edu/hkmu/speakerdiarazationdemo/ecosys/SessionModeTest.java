@@ -39,6 +39,18 @@ public class SessionModeTest {
     }
 
     @Test
+    public void onlyHearingModeExpectsGestureAudioFrames() {
+        assertTrue(SessionMode.HEARING.expectsGestureAudio());
+        assertFalse(SessionMode.DEAF.expectsGestureAudio());
+    }
+
+    @Test
+    public void bothModesExpectSomeInboundFrames() {
+        assertTrue(SessionMode.DEAF.expectsInboundFrames());
+        assertTrue(SessionMode.HEARING.expectsInboundFrames());
+    }
+
+    @Test
     public void labelsAreTheTwoChoices() {
         assertEquals("我是聽障人士", SessionMode.DEAF.label());
         assertEquals("我是健全人士", SessionMode.HEARING.label());

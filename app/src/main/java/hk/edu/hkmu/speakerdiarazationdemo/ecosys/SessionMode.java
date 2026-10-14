@@ -72,6 +72,25 @@ public enum SessionMode {
     }
 
     /**
+     * True in 健全 ({@link #HEARING}) mode: the glasses consumes inbound
+     * {@code gesture} (display) and {@code tts_audio} (playback) frames from the
+     * hub. False in 聽障 ({@link #DEAF}) mode, where the hub sends the audio to
+     * the necklace instead.
+     */
+    public boolean expectsGestureAudio() {
+        return showsGestureText;
+    }
+
+    /**
+     * True when this mode consumes any hub frame at all: subtitles in 聽障 mode,
+     * gesture text / audio in 健全 mode. The stream is only opened when this is
+     * true.
+     */
+    public boolean expectsInboundFrames() {
+        return showsSubtitles || showsGestureText;
+    }
+
+    /**
      * The role → payload-kind mapping. Null-safe: a missing mode maps to {@code null}
      * rather than throwing, so a caller can guard on it.
      */
