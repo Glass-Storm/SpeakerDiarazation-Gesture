@@ -36,6 +36,13 @@ grpc-kotlin-stub = { group = "io.grpc", name = "grpc-kotlin-stub", version.ref =
 # In-process transport: lets a plain JVM unit test stand up a real gRPC server
 # in the same process (no socket, no device) to round-trip an ecosys.v1 frame.
 grpc-inprocess = { group = "io.grpc", name = "grpc-inprocess", version.ref = "grpc" }
+# Production transport for the real client. `ManagedChannelBuilder.forAddress`
+# resolves a `ManagedChannelProvider` through ServiceLoader, so without a
+# transport artifact on the runtime classpath the shipped APK throws
+# `ProviderNotFoundException` the moment it dials the hub. `grpc-okhttp` is the
+# standard Android/JVM transport (okhttp-backed, no netty/native deps) and is
+# pinned to the same `grpc` version as the rest of the runtime.
+grpc-okhttp = { group = "io.grpc", name = "grpc-okhttp", version.ref = "grpc" }
 protobuf-javalite = { group = "com.google.protobuf", name = "protobuf-javalite", version.ref = "protobufLite" }
 protobuf-kotlin-lite = { group = "com.google.protobuf", name = "protobuf-kotlin-lite", version.ref = "protobufLite" }
 

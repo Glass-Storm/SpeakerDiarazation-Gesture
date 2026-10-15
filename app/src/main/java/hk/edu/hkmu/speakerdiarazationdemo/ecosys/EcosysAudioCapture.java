@@ -116,6 +116,15 @@ public final class EcosysAudioCapture implements AutoCloseable {
                 break;
             }
             if (read == 0) {
+                // A transient zero-sample read is legal, but a persistent one
+                // would spin this thread at 100% CPU. Yield briefly; honour an
+                // interrupt (stop()) rather than swallowing it and spinning on.
+                try {
+                    Thread.sleep(5L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
                 continue;
             }
             byte[] pcm = toLittleEndianPcm16(buffer, read);

@@ -80,6 +80,12 @@ dependencies {
     implementation(libs.grpc.kotlin.stub)
     implementation(libs.protobuf.javalite)
     implementation(libs.protobuf.kotlin.lite)
+    // The REAL transport. `grpc-stub` alone cannot dial: `ManagedChannelBuilder
+    // .forAddress(...)` resolves a `ManagedChannelProvider` via ServiceLoader and
+    // throws `ProviderNotFoundException` when no transport artifact is present.
+    // `grpc-okhttp` (okhttp-backed, no netty/native deps) is the Android-friendly
+    // choice; it is pinned to the same 1.84.0 as the rest of the gRPC runtime.
+    implementation(libs.grpc.okhttp)
 
     // Gson for JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")
