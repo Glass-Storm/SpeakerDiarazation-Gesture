@@ -17,7 +17,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      # `:app` consumes com.glassstorm.phonemanager:contract:1.1.0 from MAVEN LOCAL
+      # (the hub publishes it with :contract:publishToMavenLocal; it is on no remote
+      # repository). Publish it from a hub checkout, and give the hub its pinned
+      # ai-android composite build + the gitignored sherpa-onnx AAR.
+      - name: Set up JDK 21 (hub contract)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Publish the hub contract to Maven local
+        run: |
+          HUB="${{ github.workspace }}/../hub"
+          ENGINE="${{ github.workspace }}/../../ai-android"
+          git clone --depth 1 https://github.com/Glass-Storm/phone-manager.git "$HUB"
+          git clone --depth 1 https://github.com/Glass-Storm/ai-android.git "$ENGINE"
+          git -C "$ENGINE" checkout --detach c0644eada44c242604e07546ff93aef80d9563f8
+          bash "$ENGINE/scripts/fetch-sherpa-aar.sh"
+          cd "$HUB" && ./gradlew :contract:publishToMavenLocal
+
+      - name: Set up JDK 17 (glasses app)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -28,6 +48,9 @@ jobs:
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
 
       - name: Lint
         run: ./gradlew :app:lint --stacktrace

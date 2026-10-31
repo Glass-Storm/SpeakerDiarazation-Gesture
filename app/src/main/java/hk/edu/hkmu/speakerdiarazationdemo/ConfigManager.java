@@ -28,10 +28,6 @@ public class ConfigManager {
         if (config == null) {
             throw new IllegalStateException("config_default.json is empty or malformed");
         }
-        if (RuntimeConfigStore.hasApiKey(context)) {
-            config.setApiKey(RuntimeConfigStore.getApiKey(context));
-        }
-        config.setRegion(RuntimeConfigStore.getRegion(context));
     }
 
     public AppConfig getConfig() {

@@ -41,7 +41,19 @@ import android.speech.tts.UtteranceProgressListener;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import com.google.protobuf.ByteString;
 import hk.edu.hkmu.speakerdiarazationdemo.EnrolledSpeakerStore;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysAudioCapture;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysStreamClient;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.GestureText;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.HubHostStore;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.Pcm16;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.PcmPlayer;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionMode;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionModeStore;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SpeakerColourMap;
+import ecosys.v1.StreamFrame;
+import ecosys.v1.StreamResult;
 import hk.edu.hkmu.speakerdiarazationdemo.models.AppConfig;
 import hk.edu.hkmu.speakerdiarazationdemo.models.EnrolledSpeaker;
 import hk.edu.hkmu.speakerdiarazationdemo.models.TranscriptResult;
@@ -57,6 +69,14 @@ import hk.edu.hkmu.speakerdiarazationdemo.SettingsActivity;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
+    /** Carries the chosen {@link SessionMode} name from RoleChooserActivity to this screen. */
+    public static final String EXTRA_SESSION_MODE = "extra_session_mode";
+    /** Optional hub-host override (tools/tests); defaults to the SoftAP gateway. */
+    public static final String EXTRA_HUB_HOST = "extra_hub_host";
+    /** Last-resort SoftAP gateway; ConnectActivity normally supplies the auto-detected host. */
+    private static final String DEFAULT_HUB_HOST = "192.168.43.1";
+    private static final String ECOSYS_DEVICE_ID = "glasses";
+    private static final String UNKNOWN_SPEAKER_DISPLAY = "Unknown";
     private static final int PERMISSION_REQUEST_AUDIO = 100;
     private static final int PERMISSION_REQUEST_CAMERA = 101;
     private static final String PREFS_NAME = "app_settings";
@@ -82,15 +102,16 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvGestureSpeakingChip;
     private Button btnTestGesture;
     
-    private AudioRecorder audioRecorder;
-    private SpeechmaticsClient speechmaticsClient;
+    private EcosysStreamClient ecosysClient;
+    private EcosysAudioCapture ecosysAudioCapture;
+    private PcmPlayer pcmPlayer;
+    private String hubHost;
     private TranscriptManager transcriptManager;
     private GestureBackgroundRunner gestureRunner;
     private boolean sttConnected = false;
     private TextToSpeech gestureTts;
     private boolean gestureTtsReady = false;
     private boolean gestureTtsSpeaking = false;
-    private boolean pausedMicForTts = false;
     private String pendingGestureToSpeak = null;
     private String lastSpokenGestureLabel = null;
     private long lastSpokenGestureAtMs = 0L;
@@ -105,6 +126,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean isPaused = false;
     private SharedPreferences preferences;
     private AppConfig config;
+    private SessionMode sessionMode;
 
     private Map<String, Integer> speakerColors = new HashMap<>();
     private final List<EnrolledSpeaker> activeEnrolledSpeakers = new ArrayList<>();
@@ -122,10 +144,24 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        sessionMode = SessionModeStore.load(this);
+        if (sessionMode == null) {
+            Toast.makeText(this, "請先選擇身份才能開始", Toast.LENGTH_LONG).show();
+            startActivity(new Intent(this, RoleChooserActivity.class));
+            finish();
+            return;
+        }
+
         setContentView(R.layout.activity_main);
         
         preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        hubHost = getIntent().getStringExtra(EXTRA_HUB_HOST);
+        if (TextUtils.isEmpty(hubHost)) {
+            hubHost = DEFAULT_HUB_HOST;
+        }
+        HubHostStore.save(this, hubHost);
 
         initViews();
         initSpeakerColors();
@@ -134,6 +170,11 @@ public class MainActivity extends AppCompatActivity {
         applyFontSize();
         checkPermissions();
         
+    }
+
+    /** The deaf/hearing role chosen on the first screen; gates payload kind and display. */
+    public SessionMode getSessionMode() {
+        return sessionMode;
     }
 
     @Override
@@ -623,7 +664,6 @@ public class MainActivity extends AppCompatActivity {
                         uiHandler.post(() -> {
                             gestureTtsSpeaking = true;
                             updateStatusChip();
-                            pauseAudioCaptureForTts();
                         });
                     }
 
@@ -632,7 +672,6 @@ public class MainActivity extends AppCompatActivity {
                         uiHandler.post(() -> {
                             gestureTtsSpeaking = false;
                             updateStatusChip();
-                            resumeAudioCaptureAfterTts();
                             abandonGestureTtsFocus();
                         });
                     }
@@ -642,7 +681,6 @@ public class MainActivity extends AppCompatActivity {
                         uiHandler.post(() -> {
                             gestureTtsSpeaking = false;
                             updateStatusChip();
-                            resumeAudioCaptureAfterTts();
                             abandonGestureTtsFocus();
                         });
                     }
@@ -687,39 +725,6 @@ public class MainActivity extends AppCompatActivity {
         } catch (Throwable ignored) {}
     }
 
-    private void pauseAudioCaptureForTts() {
-        if (!isRecording || isPaused) {
-            return;
-        }
-        if (pausedMicForTts) {
-            return;
-        }
-        if (audioRecorder != null) {
-            try {
-                audioRecorder.stopRecording();
-                audioRecorder.release();
-            } catch (Throwable ignored) {
-            } finally {
-                audioRecorder = null;
-            }
-            pausedMicForTts = true;
-        }
-    }
-
-    private void resumeAudioCaptureAfterTts() {
-        if (!pausedMicForTts) {
-            return;
-        }
-        if (!isRecording || isPaused) {
-            return;
-        }
-        if (speechmaticsClient == null || !speechmaticsClient.isConnected()) {
-            return;
-        }
-        pausedMicForTts = false;
-        startAudioRecording();
-    }
-
     private void speakGestureLabel(String label) {
         if (label == null) {
             return;
@@ -745,8 +750,6 @@ public class MainActivity extends AppCompatActivity {
             updateStatusChip();
             return;
         }
-        // Some devices won't play TTS while AudioRecord is active; stop mic capture first.
-        pauseAudioCaptureForTts();
         // Try to request audio focus, but don't hard-block speaking if it's not granted on this device.
         requestGestureTtsFocus();
 
@@ -771,8 +774,6 @@ public class MainActivity extends AppCompatActivity {
         lastSpokenGestureLabel = null;
         lastSpokenGestureAtMs = 0L;
         updateStatusChip();
-        resumeAudioCaptureAfterTts();
-        pausedMicForTts = false;
         abandonGestureTtsFocus();
     }
 
@@ -841,11 +842,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        if (!RuntimeConfigStore.hasApiKey(this)) {
-            Toast.makeText(this, "請先於設定 → Speechmatics 連線設定輸入 Speechmatics API 金鑰", Toast.LENGTH_LONG).show();
-            return;
-        }
-
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this, "請授予麥克風權限", Toast.LENGTH_SHORT).show();
@@ -888,6 +884,10 @@ public class MainActivity extends AppCompatActivity {
 
         startGestureIfEnabled();
 
+        if (sessionMode != null && sessionMode.expectsInboundFrames()) {
+            startEcosysStream();
+        }
+
         transcriptManager = new TranscriptManager(this, config, new TranscriptManager.TranscriptCallback() {
             @Override
             public void onTranscriptUpdate(TranscriptResult result, boolean shouldAppend) {
@@ -905,50 +905,8 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         transcriptManager.setMutedSpeakers(mutedSpeakerTokens);
-
-        speechmaticsClient = new SpeechmaticsClient(
-                config,
-                transcriptManager,
-                new SpeechmaticsClient.SpeechmaticsCallback() {
-                    @Override
-                    public void onConnected() {
-                        runOnUiThread(() -> {
-                            Toast.makeText(MainActivity.this, "已連接", Toast.LENGTH_SHORT).show();
-                            sttConnected = true;
-                            btnRecord.setEnabled(true);
-                            partialSpeaker = null;
-                            if (!isPaused) {
-                                startAudioRecording();
-                            }
-                            refreshPauseButtonState();
-                            updateStatusChip();
-                        });
-                    }
-
-                    @Override
-                    public void onDisconnected() {
-                        runOnUiThread(() -> {
-                            Toast.makeText(MainActivity.this, "已斷開連接", Toast.LENGTH_SHORT).show();
-                            isPaused = false;
-                            sttConnected = false;
-                            refreshPauseButtonState();
-                            updateStatusChip();
-                        });
-                    }
-
-                    @Override
-                    public void onError(String error) {
-                        runOnUiThread(() -> {
-                            Toast.makeText(MainActivity.this, "錯誤: " + error, Toast.LENGTH_LONG).show();
-                            stopRecording(false);
-                        });
-                    }
-                }
-        );
-
-        speechmaticsClient.setEnrolledSpeakers(activeEnrolledSpeakers);
-        speechmaticsClient.connect();
     }
+
     private boolean isNetworkAvailable() {
         ConnectivityManager connectivityManager =
                 (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
@@ -975,25 +933,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void startAudioRecording() {
-        try {
-            audioRecorder = new AudioRecorder(data -> {
-                if (speechmaticsClient != null && speechmaticsClient.isConnected()) {
-                    speechmaticsClient.sendAudio(data);
-                }
-            });
-            audioRecorder.startRecording();
-            Log.d(TAG, "Audio recording started");
-            isPaused = false;
-            refreshPauseButtonState();
-            updateStatusChip();
-        } catch (IllegalStateException e) {
-            Log.e(TAG, "Failed to start audio recording", e);
-            Toast.makeText(this, "此裝置不支援目前的錄音設定", Toast.LENGTH_LONG).show();
-            stopRecording(false);
-        }
-    }
-
+    /** Pauses/resumes the 聽障 mic uplink owned by the ecosys stream; 健全 sends no mic. */
     private void togglePauseRecording() {
         if (!isRecording) {
             return;
@@ -1001,35 +941,28 @@ public class MainActivity extends AppCompatActivity {
         if (!isPaused) {
             pauseAudioCapture();
         } else {
-            if (speechmaticsClient == null || !speechmaticsClient.isConnected()) {
-                Toast.makeText(this, "尚未連線，無法恢復錄音", Toast.LENGTH_SHORT).show();
-                return;
-            }
             resumeAudioCapture();
         }
     }
 
     private void pauseAudioCapture() {
-        if (audioRecorder != null) {
-            audioRecorder.stopRecording();
-            audioRecorder.release();
-            audioRecorder = null;
+        if (ecosysAudioCapture != null) {
+            ecosysAudioCapture.close();
+            ecosysAudioCapture = null;
         }
         isPaused = true;
-        if (transcriptManager != null) {
-            transcriptManager.handleEndOfUtterance();
-        }
         Toast.makeText(this, "暫停錄音", Toast.LENGTH_SHORT).show();
         refreshPauseButtonState();
         updateStatusChip();
     }
 
     private void resumeAudioCapture() {
-        if (speechmaticsClient == null || !speechmaticsClient.isConnected()) {
-            Toast.makeText(this, "尚未連線至服務器", Toast.LENGTH_SHORT).show();
+        if (ecosysClient == null) {
+            Toast.makeText(this, "尚未連線至中樞", Toast.LENGTH_SHORT).show();
             return;
         }
-        startAudioRecording();
+        isPaused = false;
+        maybeStartAudioCapture();
         Toast.makeText(this, "恢復錄音", Toast.LENGTH_SHORT).show();
         updateStatusChip();
     }
@@ -1043,7 +976,7 @@ public class MainActivity extends AppCompatActivity {
             btnPauseRecording.setEnabled(false);
         } else {
             btnPauseRecording.setText(isPaused ? "繼續錄音" : "暫停錄音");
-            boolean canResume = speechmaticsClient != null && speechmaticsClient.isConnected();
+            boolean canResume = ecosysClient != null;
             btnPauseRecording.setEnabled(!isPaused || (isPaused && canResume));
         }
     }
@@ -1065,24 +998,12 @@ public class MainActivity extends AppCompatActivity {
         updateStatusChip();
         stopGesture();
 
-        // Stop audio recording
-        if (audioRecorder != null) {
-            audioRecorder.stopRecording();
-            audioRecorder.release();
-            audioRecorder = null;
-        }
-        
-        // Flush remaining transcripts
         if (transcriptManager != null) {
             transcriptManager.flush();
             transcriptManager.saveToFile();
         }
-        
-        // Disconnect WebSocket
-        if (speechmaticsClient != null) {
-            speechmaticsClient.disconnect();
-            speechmaticsClient = null;
-        }
+
+        stopEcosysStream();
         
         if (showSuccessToast && wasRecording) {
             Toast.makeText(this, "錄音已停止並保存", Toast.LENGTH_SHORT).show();
@@ -1122,27 +1043,179 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        // 创建新的框框
+        addBubble(speakerName, color, content.trim());
+        lastDisplayedSpeaker = speakerName;
+    }
+
+    private void renderSubtitleResult(StreamResult result) {
+        if (result == null) {
+            return;
+        }
+        String content = result.getText();
+        if (content == null || content.trim().isEmpty()) {
+            return;
+        }
+        String label = result.getSpeakerLabel();
+        String displayName = TextUtils.isEmpty(label) || label.trim().isEmpty()
+                ? UNKNOWN_SPEAKER_DISPLAY
+                : label.trim();
+        addBubble(displayName, SpeakerColourMap.colourFor(label), content.trim());
+        lastDisplayedSpeaker = displayName;
+    }
+
+    private void startEcosysStream() {
+        if (ecosysClient != null) {
+            return;
+        }
+        ecosysClient = new EcosysStreamClient(hubHost, EcosysStreamClient.DEFAULT_HUB_PORT, ECOSYS_DEVICE_ID);
+        ecosysClient.addListener(new EcosysStreamClient.Listener() {
+            @Override
+            public void onConnected() {
+                runOnUiThread(() -> {
+                    sttConnected = true;
+                    btnRecord.setEnabled(true);
+                    refreshPauseButtonState();
+                    updateStatusChip();
+                });
+            }
+
+            @Override
+            public void onFrame(StreamFrame frame) {
+                if (frame == null) {
+                    return;
+                }
+                switch (frame.getPayloadCase()) {
+                    case RESULT:
+                        if (sessionMode != null && sessionMode.showsSubtitles()) {
+                            StreamResult result = frame.getResult();
+                            runOnUiThread(() -> renderSubtitleResult(result));
+                        }
+                        break;
+                    case GESTURE:
+                        if (sessionMode != null && sessionMode.expectsGestureAudio()) {
+                            String text = GestureText.displayText(
+                                    frame.getGesture().getText(),
+                                    frame.getGesture().getLabel());
+                            if (text != null) {
+                                runOnUiThread(() -> showInboundGesture(text));
+                            }
+                        }
+                        break;
+                    case TTS_AUDIO:
+                        if (sessionMode != null && sessionMode.expectsGestureAudio()) {
+                            playInboundAudio(frame.getTtsAudio().getPcm1616K().toByteArray());
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            @Override
+            public void onDisconnected(Throwable cause) {
+                runOnUiThread(() -> {
+                    sttConnected = false;
+                    refreshPauseButtonState();
+                    updateStatusChip();
+                });
+            }
+        });
+        ecosysClient.start();
+
+        // 聽障 streams mic audio UP to the hub; 健全 must never upload audio.
+        maybeStartAudioCapture();
+    }
+
+    /**
+     * Starts microphone capture → {@code audio_pcm16_16k} frames in 聽障 ({@link SessionMode#DEAF})
+     * mode only. A denied mic permission is surfaced as a message and never crashes.
+     */
+    private void maybeStartAudioCapture() {
+        if (ecosysAudioCapture != null || sessionMode == null || !sessionMode.sendsAudio()) {
+            return;
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "需要麥克風權限才能傳送語音字幕", Toast.LENGTH_LONG).show();
+            checkPermissions();
+            return;
+        }
+        EcosysAudioCapture capture = new EcosysAudioCapture(this::sendAudioFrame);
+        if (capture.start()) {
+            ecosysAudioCapture = capture;
+        } else {
+            Toast.makeText(this, "無法啟動麥克風錄音", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** Sends one framed mic payload, dropping it only when the stream is momentarily down. */
+    private void sendAudioFrame(byte[] pcm) {
+        EcosysStreamClient client = ecosysClient;
+        if (client == null || pcm == null || pcm.length == 0) {
+            return;
+        }
+        try {
+            client.send(StreamFrame.newBuilder()
+                    .setAudioPcm1616K(ByteString.copyFrom(pcm))
+                    .build());
+        } catch (IllegalStateException notConnected) {
+            Log.d(TAG, "dropping audio frame: stream not connected");
+        }
+    }
+
+    /** Shows a hub-recognized gesture in the overlay; the audio arrives as a separate {@code tts_audio} frame. */
+    private void showInboundGesture(String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        updateGestureLabel(text);
+        showGestureOverlay();
+        scheduleGestureOverlayHide();
+    }
+
+    /** Plays a hub-synthesized {@code tts_audio} payload off the UI thread, ignoring malformed frames. */
+    private void playInboundAudio(byte[] pcm) {
+        if (!Pcm16.isPlayable(pcm)) {
+            return;
+        }
+        if (pcmPlayer == null) {
+            pcmPlayer = new PcmPlayer();
+        }
+        pcmPlayer.play(pcm);
+    }
+
+    private void stopPcmPlayer() {
+        if (pcmPlayer != null) {
+            pcmPlayer.close();
+            pcmPlayer = null;
+        }
+    }
+
+    private void stopEcosysStream() {
+        if (ecosysAudioCapture != null) {
+            ecosysAudioCapture.close();
+            ecosysAudioCapture = null;
+        }
+        if (ecosysClient != null) {
+            ecosysClient.close();
+            ecosysClient = null;
+        }
+        stopPcmPlayer();
+    }
+
+    private TextView addBubble(String speakerName, int color, String content) {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.HORIZONTAL);
         container.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
         container.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        
-        // 半透明灰色背景（微信风格）
-        int bgColor = Color.parseColor("#E6404040"); // 40% 透明度的灰色
-        container.setBackgroundColor(bgColor);
-        
-        // 圆角（微信风格，不要太圆）
-        float cornerRadius = dpToPx(6);
-        container.setElevation(0);
-        
-        // 使用 GradientDrawable 实现圆角
+
+        int bgColor = Color.parseColor("#E6404040");
         android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
         drawable.setColor(bgColor);
-        drawable.setCornerRadius(cornerRadius);
+        drawable.setCornerRadius(dpToPx(6));
         container.setBackground(drawable);
-        
-        // 底部边距
+        container.setElevation(0);
+
         LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1150,7 +1223,6 @@ public class MainActivity extends AppCompatActivity {
         containerParams.setMargins(0, 0, 0, dpToPx(8));
         container.setLayoutParams(containerParams);
 
-        // 说话者标签
         TextView speakerLabel = new TextView(this);
         speakerLabel.setText(speakerName + "：");
         speakerLabel.setTextColor(color);
@@ -1163,9 +1235,8 @@ public class MainActivity extends AppCompatActivity {
         speakerParams.setMargins(0, 0, dpToPx(4), 0);
         speakerLabel.setLayoutParams(speakerParams);
 
-        // 内容文字
         TextView contentView = new TextView(this);
-        contentView.setText(content.trim());
+        contentView.setText(content);
         contentView.setTextColor(Color.WHITE);
         contentView.setTextSize(TypedValue.COMPLEX_UNIT_SP, getSavedFontSize());
         contentView.setId(R.id.transcript_text_view);
@@ -1180,7 +1251,13 @@ public class MainActivity extends AppCompatActivity {
         container.addView(contentView);
         container.setTag(R.id.transcript_text_view, contentView);
 
-        // 添加到 ScrollView
+        LinearLayout scrollContent = scrollContentOrCreate();
+        scrollContent.addView(container);
+        scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+        return contentView;
+    }
+
+    private LinearLayout scrollContentOrCreate() {
         LinearLayout scrollContent = (LinearLayout) scrollView.getChildAt(0);
         if (scrollContent == null) {
             scrollContent = new LinearLayout(this);
@@ -1188,12 +1265,7 @@ public class MainActivity extends AppCompatActivity {
             scrollContent.setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(140));
             scrollView.addView(scrollContent);
         }
-        scrollContent.addView(container);
-
-        lastDisplayedSpeaker = speakerName;
-        
-        // Auto scroll to bottom
-        scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+        return scrollContent;
     }
 
     private int dpToPx(int dp) {
@@ -1293,6 +1365,7 @@ public class MainActivity extends AppCompatActivity {
         }
         stopGesture();
         shutdownGestureTts();
+        stopEcosysStream();
     }
 
     @Override

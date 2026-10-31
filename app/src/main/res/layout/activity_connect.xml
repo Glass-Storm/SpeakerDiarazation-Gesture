@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Manual-connect step: enable the phone hotspot and join it by hand. Minimal (no design system). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:padding="24dp"
+    android:background="#1E1E1E">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="連線到手機 Hub"
+        android:textColor="#FFFFFF"
+        android:textSize="24sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:lineSpacingExtra="6dp"
+        android:text="1. 在手機開啟「個人熱點」\n2. 在眼鏡的 Wi-Fi 設定中手動連線該熱點\n3. 返回本頁，App 會自動偵測閘道位址（手機本身就是 Hub）"
+        android:textColor="#DDDDDD"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/tvConnectHost"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="28dp"
+        android:text="Hub 位址：尚未偵測"
+        android:textColor="#80CBC4"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvConnectStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:lineSpacingExtra="4dp"
+        android:text="請先連線到手機熱點。"
+        android:textColor="#BBBBBB"
+        android:textSize="15sp" />
+
+    <Button
+        android:id="@+id/btnConnectRetry"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="28dp"
+        android:backgroundTint="#607D8B"
+        android:padding="16dp"
+        android:text="重新偵測"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp" />
+
+    <Button
+        android:id="@+id/btnConnectContinue"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:backgroundTint="#4CAF50"
+        android:enabled="false"
+        android:padding="16dp"
+        android:text="繼續"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp" />
+
+</LinearLayout>

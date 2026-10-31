@@ -37,20 +37,33 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="請先閱讀以下提示句，待會按住按鈕朗讀。"
+        android:text="對著麥克風自然說話 8 秒，聲紋會儲存在中樞。名稱只可使用中文字、英文字母及數字（1–24 字）。"
         android:textColor="#BBBBBB"
-        android:textSize="15sp"
+        android:textSize="14sp"
         android:layout_marginTop="16dp" />
 
     <TextView
-        android:id="@+id/tvSampleSentence"
+        android:id="@+id/tvEnrolledNames"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="樣本句子"
-        android:textColor="#2196F3"
+        android:text="已註冊：無"
+        android:textColor="#7FD1FF"
+        android:textSize="14sp"
+        android:padding="12dp"
+        android:background="#2E2E2E"
+        android:layout_marginTop="12dp" />
+
+    <EditText
+        android:id="@+id/etSpeakerName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="輸入名稱，例如 Alice 或 小明"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#888888"
         android:textSize="16sp"
-        android:textStyle="bold"
-        android:padding="16dp"
+        android:inputType="text"
+        android:maxLines="1"
+        android:padding="12dp"
         android:background="#2E2E2E"
         android:layout_marginTop="12dp" />
 
@@ -58,10 +71,30 @@
         android:id="@+id/tvStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="請按住按鈕開始錄音"
+        android:text="請按「開始錄音（8 秒）」"
         android:textColor="#FFFFFF"
         android:textSize="14sp"
-        android:layout_marginTop="20dp" />
+        android:layout_marginTop="16dp" />
+
+    <ProgressBar
+        android:id="@+id/progressRecord"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="6dp"
+        android:max="100"
+        android:progress="0"
+        android:progressTint="#4CAF50"
+        android:layout_marginTop="12dp" />
+
+    <ProgressBar
+        android:id="@+id/progressSubmitting"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:visibility="gone"
+        android:indeterminate="true"
+        android:indeterminateTint="#2196F3"
+        android:layout_marginTop="8dp" />
 
     <View
         android:layout_width="match_parent"
@@ -69,21 +102,11 @@
         android:layout_weight="1"
         android:minHeight="0dp" />
 
-    <ProgressBar
-        android:id="@+id/progressEnrollment"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="4dp"
-        android:visibility="gone"
-        android:indeterminate="true"
-        android:indeterminateTint="#2196F3"
-        android:layout_marginBottom="16dp" />
-
     <Button
-        android:id="@+id/btnHoldToRecord"
+        android:id="@+id/btnStartRecording"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="按住開始錄音"
+        android:text="開始錄音（8 秒）"
         android:textSize="16sp"
         android:backgroundTint="#4CAF50"
         android:textColor="#FFFFFF"

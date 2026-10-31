@@ -12,7 +12,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.content.pm.ResolveInfo;
 import android.text.InputFilter;
-import android.text.method.PasswordTransformationMethod;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
@@ -39,6 +38,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import hk.edu.hkmu.speakerdiarazationdemo.EnrolledSpeakerStore;
 import hk.edu.hkmu.speakerdiarazationdemo.adapters.TranscriptListAdapter;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionMode;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionModeStore;
 import hk.edu.hkmu.speakerdiarazationdemo.models.EnrolledSpeaker;
 import java.io.BufferedReader;
 import java.io.File;
@@ -80,6 +81,8 @@ public class SettingsActivity extends AppCompatActivity {
     private Button btnLoadMoreTranscripts;
     private Button btnClearTranscripts;
     private TextView tvTranscriptPath;
+    private TextView tvCurrentRole;
+    private Button btnSwitchRole;
 
     private SharedPreferences preferences;
     private MediaPlayer mediaPlayer;
@@ -102,10 +105,6 @@ public class SettingsActivity extends AppCompatActivity {
     private final List<File> allTranscriptFiles = new ArrayList<>();
     private static final int TRANSCRIPT_PAGE_SIZE = 20;
     private int loadedTranscriptCount = 0;
-
-    private EditText etApiKey;
-    private CheckBox cbShowApiKey;
-    private Spinner spinnerRegion;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -143,6 +142,7 @@ public class SettingsActivity extends AppCompatActivity {
         btnTtsSetup = findViewById(R.id.btnTtsSetup);
         btnTtsTest = findViewById(R.id.btnTtsTest);
         spinnerTtsEngine = findViewById(R.id.spinnerTtsEngine);
+        Button btnDebugPage = findViewById(R.id.btnDebugPage);
 
         containerEnrolledSpeakers = findViewById(R.id.containerEnrolledSpeakers);
         rvTranscripts = findViewById(R.id.rvTranscripts);
@@ -152,10 +152,8 @@ public class SettingsActivity extends AppCompatActivity {
         btnLoadMoreTranscripts = findViewById(R.id.btnLoadMoreTranscripts);
         btnClearTranscripts = findViewById(R.id.btnClearTranscripts);
         tvTranscriptPath = findViewById(R.id.tvTranscriptPath);
-
-        etApiKey = findViewById(R.id.etApiKey);
-        cbShowApiKey = findViewById(R.id.cbShowApiKey);
-        spinnerRegion = findViewById(R.id.spinnerRegion);
+        tvCurrentRole = findViewById(R.id.tvCurrentRole);
+        btnSwitchRole = findViewById(R.id.btnSwitchRole);
 
         if (btnBack != null) {
             btnBack.setOnClickListener(v -> finish());
@@ -169,10 +167,39 @@ public class SettingsActivity extends AppCompatActivity {
         if (btnTtsTest != null) {
             btnTtsTest.setOnClickListener(v -> testTts());
         }
+        if (btnDebugPage != null) {
+            btnDebugPage.setOnClickListener(v -> startActivity(new Intent(this, DebugActivity.class)));
+        }
+        if (btnSwitchRole != null) {
+            btnSwitchRole.setOnClickListener(v -> switchRole());
+        }
 
+        updateCurrentRole();
         setupTtsEngineSpinner();
-        setupApiKeyControls();
-        setupRegionSpinner();
+    }
+
+    private void updateCurrentRole() {
+        if (tvCurrentRole == null) {
+            return;
+        }
+        SessionMode mode = SessionModeStore.load(this);
+        String roleName;
+        if (mode == SessionMode.DEAF) {
+            roleName = "聽障人士";
+        } else if (mode == SessionMode.HEARING) {
+            roleName = "健全人士";
+        } else {
+            roleName = "尚未選擇";
+        }
+        tvCurrentRole.setText("目前身份：" + roleName);
+    }
+
+    private void switchRole() {
+        SessionModeStore.clear(this);
+        Intent intent = new Intent(this, RoleChooserActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(intent);
+        finishAffinity();
     }
 
     private void initFontSizeControls() {
@@ -205,9 +232,6 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         persistFontSize(getSelectedFontSize());
-        if (etApiKey != null) {
-            RuntimeConfigStore.setApiKey(this, etApiKey.getText().toString().trim());
-        }
         super.onPause();
     }
 
@@ -516,68 +540,6 @@ public class SettingsActivity extends AppCompatActivity {
                 // Re-init with the newly selected engine next time.
                 resetTts();
                 ensureTts();
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {}
-        });
-    }
-
-    private void setupApiKeyControls() {
-        if (etApiKey == null || cbShowApiKey == null) {
-            return;
-        }
-        etApiKey.setText(RuntimeConfigStore.getApiKey(this));
-
-        cbShowApiKey.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (isChecked) {
-                etApiKey.setTransformationMethod(null);
-            } else {
-                etApiKey.setTransformationMethod(PasswordTransformationMethod.getInstance());
-            }
-        });
-
-        etApiKey.setOnEditorActionListener((v, actionId, event) -> {
-            RuntimeConfigStore.setApiKey(this, etApiKey.getText().toString().trim());
-            return false;
-        });
-    }
-
-    private void setupRegionSpinner() {
-        if (spinnerRegion == null) {
-            return;
-        }
-        String[] regionLabels = {"自動（全球）", "歐洲 (eu)", "美國 (us)", "澳洲 (au)"};
-        String[] regionValues = {"global", "eu", "us", "au"};
-
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(
-            this,
-            android.R.layout.simple_spinner_item,
-            regionLabels
-        );
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinnerRegion.setAdapter(adapter);
-
-        String savedRegion = RuntimeConfigStore.getRegion(this);
-        int initialIndex = 2; // default "us"
-        for (int i = 0; i < regionValues.length; i++) {
-            if (regionValues[i].equals(savedRegion)) {
-                initialIndex = i;
-                break;
-            }
-        }
-        spinnerRegion.setSelection(initialIndex, false);
-
-        spinnerRegion.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            private boolean isFirstSelection = true;
-
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (isFirstSelection) {
-                    isFirstSelection = false;
-                    return;
-                }
-                RuntimeConfigStore.setRegion(SettingsActivity.this, regionValues[position]);
             }
 
             @Override

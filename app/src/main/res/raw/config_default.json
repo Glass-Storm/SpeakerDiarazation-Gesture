@@ -1,21 +1,5 @@
 {
-  "api_key": "YOUR_SPEECHMATICS_API_KEY",
   "language": "yue",
-  "region": "us",
-  "timeout_seconds": 1.5,
-  "operating_point": "enhanced",
-  "max_delay_mode": "flexible",
-  "enable_partials": true,
-  "diarization": "speaker",
-  "max_speakers": 10,
-  "speaker_sensitivity": 0.6,
-  "end_of_utterance_silence_trigger": 0.8,
-  "audio_filter_volume_threshold": 0,
-  "speaker_names": {
-    "S1": "s1",
-    "S2": "s2",
-    "S3": "s3",
-    "S4": "s4",
-    "S5": "s5"
-  }
+  "wifi_ssid": "EcoSys-Hub",
+  "wifi_password": "ecosys-demo-2026"
 }

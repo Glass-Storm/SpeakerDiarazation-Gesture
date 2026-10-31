@@ -1,30 +1,36 @@
 package hk.edu.hkmu.speakerdiarazationdemo;
 
 import android.Manifest;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.MediaPlayer;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.text.TextUtils;
-import android.util.TypedValue;
-import android.view.MotionEvent;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+
+import com.google.protobuf.ByteString;
+
+import ecosys.v1.EnrollRequest;
+import ecosys.v1.StreamFrame;
 import hk.edu.hkmu.speakerdiarazationdemo.audio.EnrollmentRecorder;
-import hk.edu.hkmu.speakerdiarazationdemo.EnrolledSpeakerStore;
-import hk.edu.hkmu.speakerdiarazationdemo.ConfigManager;
-import hk.edu.hkmu.speakerdiarazationdemo.models.AppConfig;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysStreamClient;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EnrollmentName;
 import hk.edu.hkmu.speakerdiarazationdemo.models.EnrolledSpeaker;
+
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -33,45 +39,93 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * Local voiceprint enrollment for the hub.
+ *
+ * <p>The screen records exactly {@value #RECORD_DURATION_MS} ms of 16 kHz mono
+ * PCM16 audio (shown as a determinate progress bar), asks for a name validated
+ * by {@link EnrollmentName} ({@code ^[\p{Han}A-Za-z0-9]+$}, 1–24 chars), and
+ * sends an {@code enroll_request{name, audio_pcm16_16k}} over the plaintext
+ * {@code ecosys.v1} stream. The hub owns the voiceprints: it answers with
+ * {@code enroll_response{ok, reason}}, which this screen shows.
+ *
+ * <p>The previously-enrolled names are listed from the local mirror the hub's
+ * accepted responses populate, so a name can be re-enrolled (replaced) by
+ * entering it again. The voiceprints themselves live only on the hub.
+ */
 public class SpeakerEnrollmentActivity extends AppCompatActivity {
+
     public static final String EXTRA_LANGUAGE = "extra_language";
     public static final String EXTRA_EXISTING_NAME = "extra_existing_name";
     public static final String EXTRA_EXISTING_AUDIO_PATH = "extra_existing_audio_path";
+    /** Optional hub-host override (tools/tests); defaults to the SoftAP gateway. */
+    public static final String EXTRA_HUB_HOST = "extra_hub_host";
 
-    private static final String[] SAMPLE_SENTENCES_ZH = {
-            "\u4eca\u5929\u7684\u5929\u6c23\u4e0d\u932f\uff0c\u6211\u5011\u51fa\u53bb\u8d70\u8d70\u5427\u3002",
-            "\u8acb\u4fdd\u6301\u5fc3\u60c5\u8f15\u9b06\uff0c\u81ea\u7136\u5730\u8b80\u5b8c\u9019\u6bb5\u8a71\u3002",
-            "\u5728\u9019\u88e1\u8a3b\u518a\u8072\u97f3\uff0c\u53ef\u4ee5\u8b93\u6211\u8a8d\u51fa\u4f60\u3002"
-    };
+    /** The phone is the SoftAP, so the hub is reachable at the gateway until T22 auto-detects it. */
+    private static final String DEFAULT_HUB_HOST = "192.168.43.1";
+    private static final String ECOSYS_DEVICE_ID = "glasses";
 
-    private static final String[] SAMPLE_SENTENCES_YUE = {
-            "\u4eca\u65e5\u5605\u5929\u6c23\u5514\u932f\u558e\uff0c\u4e0d\u5982\u6211\u54cb\u51fa\u53bb\u884c\u4e0b\u5566\u3002",
-            "\u653e\u8f15\u9b06\uff0c\u81ea\u7136\u5481\u8b1b\uff0c\u5514\u4f7f\u592a\u523b\u610f\u3002",
-            "\u767b\u8a18\u8072\u7d0b\u5f8c\uff0c\u4e0b\u6b21\u5c31\u6703\u77e5\u9053\u4f60\u4fc2\u908a\u4f4d\u3002"
-    };
+    /** The hub minimum, and the exact length this screen records. */
+    public static final int RECORD_DURATION_MS = 8000;
+    private static final int RECORD_TICK_MS = 100;
 
-    private static final String[] SAMPLE_SENTENCES_EN = {
-            "The weather is great today, let's go for a walk.",
-            "Relax, take a deep breath, and read this sentence clearly.",
-            "Registering your voice helps me recognise you next time."
-    };
+    /** Bytes in an 8 s clip of 16 kHz mono PCM16; the hub rejects anything shorter. */
+    private static final int MIN_ENROLLMENT_BYTES =
+            (RECORD_DURATION_MS / 1000) * EnrollmentRecorder.SAMPLE_RATE * 2;
 
-    private TextView tvSample;
+    private static final long ENROLL_TIMEOUT_MS = 15_000L;
+
+    private EditText etSpeakerName;
     private TextView tvStatus;
-    private View btnHoldRecord;
-    private View btnPlay;
+    private TextView tvEnrolledNames;
+    private View btnStartRecording;
+    private View btnPlayRecording;
+    private View btnDiscardRecording;
     private View btnSubmit;
-    private View btnDiscard;
-    private ProgressBar progressBar;
+    private ProgressBar progressRecord;
+    private ProgressBar progressSubmitting;
 
     private EnrollmentRecorder recorder;
     private MediaPlayer mediaPlayer;
+    private EcosysStreamClient ecosysClient;
+
     private boolean hasRecording = false;
     private boolean isRecording = false;
     private boolean isSubmitting = false;
-    private String languageCode;
+    private long recordStartMs = 0L;
+    private String languageCode = "yue";
     private String existingName;
     private String existingAudioPath;
+    private String submissionName;
+    private String hubHost;
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+
+    private final Runnable recordTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!isRecording) {
+                return;
+            }
+            long elapsed = SystemClock.elapsedRealtime() - recordStartMs;
+            if (elapsed >= RECORD_DURATION_MS) {
+                progressRecord.setProgress(100);
+                stopRecording();
+                return;
+            }
+            int percent = (int) (elapsed * 100 / RECORD_DURATION_MS);
+            progressRecord.setProgress(percent);
+            tvStatus.setText(String.format(Locale.getDefault(),
+                    "錄音中… %.1f / %.1f 秒", elapsed / 1000.0, RECORD_DURATION_MS / 1000.0));
+            handler.postDelayed(this, RECORD_TICK_MS);
+        }
+    };
+
+    private final Runnable enrollTimeout = () -> {
+        if (isSubmitting) {
+            onEnrollmentFailed("中樞沒有回應，請確認已連上熱點後重試");
+        }
+    };
 
     private final ActivityResultLauncher<String> permissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
@@ -85,51 +139,48 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_speaker_enrollment);
 
-        languageCode = getIntent().getStringExtra(EXTRA_LANGUAGE);
-        if (languageCode == null) {
-            languageCode = "yue";
-        }
+        languageCode = coalesce(getIntent().getStringExtra(EXTRA_LANGUAGE), "yue");
         existingName = getIntent().getStringExtra(EXTRA_EXISTING_NAME);
         existingAudioPath = getIntent().getStringExtra(EXTRA_EXISTING_AUDIO_PATH);
+        hubHost = coalesce(getIntent().getStringExtra(EXTRA_HUB_HOST), DEFAULT_HUB_HOST);
 
         initViews();
         ensureMicPermission();
+        connectEcosys();
+    }
+
+    private static String coalesce(String value, String fallback) {
+        return TextUtils.isEmpty(value) ? fallback : value;
     }
 
     private void initViews() {
         ImageButton btnBack = findViewById(R.id.btnClose);
-        tvSample = findViewById(R.id.tvSampleSentence);
+        etSpeakerName = findViewById(R.id.etSpeakerName);
         tvStatus = findViewById(R.id.tvStatus);
-        btnHoldRecord = findViewById(R.id.btnHoldToRecord);
-        btnPlay = findViewById(R.id.btnPlayRecording);
+        tvEnrolledNames = findViewById(R.id.tvEnrolledNames);
+        btnStartRecording = findViewById(R.id.btnStartRecording);
+        btnPlayRecording = findViewById(R.id.btnPlayRecording);
+        btnDiscardRecording = findViewById(R.id.btnDiscardRecording);
         btnSubmit = findViewById(R.id.btnSubmitEnrollment);
-        btnDiscard = findViewById(R.id.btnDiscardRecording);
-        progressBar = findViewById(R.id.progressEnrollment);
+        progressRecord = findViewById(R.id.progressRecord);
+        progressSubmitting = findViewById(R.id.progressSubmitting);
 
-        if (btnBack != null) {
-            btnBack.setOnClickListener(v -> finish());
+        if (existingName != null) {
+            etSpeakerName.setText(existingName);
         }
 
-        updateSampleSentence();
-        updateUiState();
-
-        btnHoldRecord.setOnTouchListener((v, event) -> {
-            switch (event.getAction()) {
-                case MotionEvent.ACTION_DOWN:
-                    startRecording();
-                    return true;
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL:
-                    stopRecording();
-                    return true;
-                default:
-                    return false;
-            }
-        });
-
-        btnPlay.setOnClickListener(v -> playRecording());
-        btnDiscard.setOnClickListener(v -> discardRecording());
+        btnBack.setOnClickListener(v -> finish());
+        btnStartRecording.setOnClickListener(v -> startRecording());
+        btnPlayRecording.setOnClickListener(v -> playRecording());
+        btnDiscardRecording.setOnClickListener(v -> discardRecording());
         btnSubmit.setOnClickListener(v -> submitEnrollment());
+
+        progressRecord.setMax(100);
+        progressRecord.setProgress(0);
+        progressSubmitting.setVisibility(View.GONE);
+
+        refreshEnrolledNames();
+        updateUiState();
     }
 
     private void ensureMicPermission() {
@@ -139,18 +190,32 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
         }
     }
 
-    private void updateSampleSentence() {
-        String[] sentences = SAMPLE_SENTENCES_YUE;
-        switch (languageCode) {
-            case "cmn":
-                sentences = SAMPLE_SENTENCES_ZH;
-                break;
-            case "en":
-                sentences = SAMPLE_SENTENCES_EN;
-                break;
-        }
-        int index = (int) (System.currentTimeMillis() % sentences.length);
-        tvSample.setText(sentences[index]);
+    /** Opens the enrollment stream; the hub answers an {@code enroll_request} on the same session. */
+    private void connectEcosys() {
+        EcosysStreamClient client =
+                new EcosysStreamClient(hubHost, EcosysStreamClient.DEFAULT_HUB_PORT, ECOSYS_DEVICE_ID);
+        client.addListener(new EcosysStreamClient.Listener() {
+            @Override
+            public void onConnected() {
+            }
+
+            @Override
+            public void onFrame(StreamFrame frame) {
+                if (frame == null
+                        || frame.getPayloadCase() != StreamFrame.PayloadCase.ENROLL_RESPONSE) {
+                    return;
+                }
+                boolean ok = frame.getEnrollResponse().getOk();
+                String reason = frame.getEnrollResponse().getReason();
+                runOnUiThread(() -> handleEnrollResponse(ok, reason));
+            }
+
+            @Override
+            public void onDisconnected(Throwable cause) {
+            }
+        });
+        ecosysClient = client;
+        client.start();
     }
 
     private void startRecording() {
@@ -159,36 +224,70 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
         }
         stopPlayback();
 
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO);
+            Toast.makeText(this, "需要麥克風權限才能錄音", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         try {
             if (recorder != null) {
                 recorder.release();
             }
             recorder = new EnrollmentRecorder();
             recorder.start();
-            isRecording = true;
-            hasRecording = false;
-            tvStatus.setText("\u9304\u97f3\u4e2d\uff0c\u8acb\u4fdd\u6301\u8aaa\u8a71\u2026");
-            btnHoldRecord.setPressed(true);
         } catch (Exception e) {
-            Toast.makeText(this, "無法開始錄音：" + e.getMessage(), Toast.LENGTH_SHORT).show();
-            isRecording = false;
             recorder = null;
+            Toast.makeText(this, "無法開始錄音：" + e.getMessage(), Toast.LENGTH_SHORT).show();
+            return;
         }
 
+        isRecording = true;
+        hasRecording = false;
+        recordStartMs = SystemClock.elapsedRealtime();
+        progressRecord.setProgress(0);
+        tvStatus.setText("錄音中… 0.0 / 8.0 秒");
         updateUiState();
+        handler.post(recordTick);
     }
 
     private void stopRecording() {
+        handler.removeCallbacks(recordTick);
         if (!isRecording || recorder == null) {
             return;
         }
         recorder.stop();
         isRecording = false;
-        hasRecording = recorder.getPcm16Data().length > 0;
-        tvStatus.setText(hasRecording
-                ? "\u9304\u97f3\u5b8c\u6210\uff0c\u53ef\u64ad\u653e\u6216\u9001\u51fa"
-                : "\u672a\u6355\u6349\u5230\u97f3\u8a0a\uff0c\u8acb\u91cd\u65b0\u9304\u88fd");
-        btnHoldRecord.setPressed(false);
+        progressRecord.setProgress(100);
+
+        byte[] pcm = recorder.getPcm16Data();
+        hasRecording = pcm.length >= MIN_ENROLLMENT_BYTES;
+        if (hasRecording) {
+            int seconds = pcm.length / (EnrollmentRecorder.SAMPLE_RATE * 2);
+            tvStatus.setText("錄音完成（" + seconds + " 秒），輸入名稱後按「完成註冊」");
+        } else {
+            tvStatus.setText("錄音不足 8 秒，請重新錄製");
+        }
+        updateUiState();
+    }
+
+    private void discardRecording() {
+        handler.removeCallbacks(recordTick);
+        if (isRecording) {
+            isRecording = false;
+            if (recorder != null) {
+                recorder.stop();
+            }
+        }
+        stopPlayback();
+        hasRecording = false;
+        if (recorder != null) {
+            recorder.release();
+            recorder = null;
+        }
+        progressRecord.setProgress(0);
+        tvStatus.setText("請按「開始錄音（8 秒）」重新錄製");
         updateUiState();
     }
 
@@ -197,7 +296,6 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
             return;
         }
         stopPlayback();
-
         try {
             File tempDir = new File(getCacheDir(), "enrollment_preview");
             File wavFile = recorder.writeWavFile(tempDir, "preview.wav");
@@ -206,7 +304,7 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
             mediaPlayer.setOnCompletionListener(mp -> stopPlayback());
             mediaPlayer.prepare();
             mediaPlayer.start();
-            tvStatus.setText("\u64ad\u653e\u9304\u97f3\u4e2d\u2026");
+            tvStatus.setText("播放錄音中…");
         } catch (IOException e) {
             Toast.makeText(this, "無法播放錄音：" + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
@@ -216,222 +314,217 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
         if (mediaPlayer != null) {
             try {
                 mediaPlayer.stop();
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // The player may already be stopped; playback is best-effort.
+            }
             mediaPlayer.release();
             mediaPlayer = null;
         }
-        if (!isRecording && !isSubmitting) {
-            tvStatus.setText(hasRecording
-                    ? "\u9304\u97f3\u5b8c\u6210\uff0c\u53ef\u64ad\u653e\u6216\u9001\u51fa"
-                    : "\u8acb\u6309\u4f4f\u6309\u9215\u958b\u59cb\u9304\u97f3");
-        }
-    }
-
-    private void discardRecording() {
-        stopPlayback();
-        hasRecording = false;
-        if (recorder != null) {
-            recorder.release();
-            recorder = null;
-        }
-        tvStatus.setText("\u8acb\u6309\u4f4f\u6309\u9215\u958b\u59cb\u9304\u97f3");
-        updateUiState();
     }
 
     private void submitEnrollment() {
+        if (isSubmitting) {
+            return;
+        }
         if (!hasRecording || recorder == null) {
-            Toast.makeText(this, "請先錄音", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "請先錄製 8 秒語音", Toast.LENGTH_SHORT).show();
             return;
         }
+
+        String name = etSpeakerName.getText().toString();
+        String invalidReason = EnrollmentName.invalidReason(name);
+        if (invalidReason != null) {
+            Toast.makeText(this, invalidReason, Toast.LENGTH_LONG).show();
+            tvStatus.setText(invalidReason);
+            return;
+        }
+
         byte[] pcm = recorder.getPcm16Data();
-        if (pcm.length < EnrollmentRecorder.SAMPLE_RATE) {
-            Toast.makeText(this, "\u9304\u97f3\u592a\u77ed\uff0c\u8acb\u81f3\u5c11\u8aaa 1 \u79d2", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        tvStatus.setText("\u6b63\u5728\u4e0a\u50b3\u4e26\u8a3b\u518a\uff0c\u8acb\u7a0d\u5019..." );
-        progressBar.setVisibility(View.VISIBLE);
-        isSubmitting = true;
-        updateUiState();
-
-        byte[] floatData = recorder.getFloat32leData();
-        AppConfig appConfig = ensureConfig();
-        if (appConfig == null) {
-            progressBar.setVisibility(View.GONE);
-            tvStatus.setText("無法載入設定，請重試");
-            isSubmitting = false;
+        if (pcm.length < MIN_ENROLLMENT_BYTES) {
+            Toast.makeText(this, "錄音不足 8 秒", Toast.LENGTH_SHORT).show();
+            tvStatus.setText("錄音不足 8 秒，請重新錄製");
+            hasRecording = false;
             updateUiState();
             return;
         }
 
-        if (!RuntimeConfigStore.hasApiKey(this)) {
-            Toast.makeText(this, "請先於設定 → Speechmatics 連線設定輸入 Speechmatics API 金鑰", Toast.LENGTH_LONG).show();
+        EcosysStreamClient client = ecosysClient;
+        if (client == null) {
+            Toast.makeText(this, "中樞連線未就緒", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        SpeechmaticsEnrollmentClient client = new SpeechmaticsEnrollmentClient(appConfig);
-        client.enroll(floatData, languageCode, new SpeechmaticsEnrollmentClient.Callback() {
-            @Override
-            public void onSuccess(List<String> identifiers) {
-                runOnUiThread(() -> handleEnrollmentSuccess(identifiers, client));
-            }
-
-            @Override
-            public void onError(String error) {
-                runOnUiThread(() -> {
-                    progressBar.setVisibility(View.GONE);
-                    tvStatus.setText("\u8a3b\u518a\u5931\u6557\uff0c\u8acb\u91cd\u8a66");
-                    isSubmitting = false;
-                    updateUiState();
-                    Toast.makeText(SpeakerEnrollmentActivity.this, error, Toast.LENGTH_LONG).show();
-                });
-                client.close();
-            }
-        });
-    }
-
-    private void handleEnrollmentSuccess(List<String> identifiers, SpeechmaticsEnrollmentClient client) {
-        progressBar.setVisibility(View.GONE);
-        isSubmitting = false;
+        submissionName = name;
+        isSubmitting = true;
+        progressSubmitting.setVisibility(View.VISIBLE);
+        tvStatus.setText("正在註冊「" + name + "」…");
         updateUiState();
-        client.close();
 
-        if (identifiers == null || identifiers.isEmpty()) {
-            Toast.makeText(this, "\u6c92\u6709\u53d6\u5f97\u8aaa\u8a71\u8005\u4ee3\u78bc\uff0c\u8acb\u91cd\u65b0\u9304\u88fd", Toast.LENGTH_SHORT).show();
+        try {
+            client.send(StreamFrame.newBuilder()
+                    .setEnrollRequest(EnrollRequest.newBuilder()
+                            .setName(name)
+                            .setAudioPcm1616K(ByteString.copyFrom(pcm))
+                            .setPtsMs(System.currentTimeMillis())
+                            .build())
+                    .build());
+        } catch (IllegalStateException notConnected) {
+            onEnrollmentFailed("尚未連上中樞，請確認已連上熱點");
+            return;
+        }
+        handler.postDelayed(enrollTimeout, ENROLL_TIMEOUT_MS);
+    }
+
+    private void handleEnrollResponse(boolean ok, String reason) {
+        handler.removeCallbacks(enrollTimeout);
+        progressSubmitting.setVisibility(View.GONE);
+        isSubmitting = false;
+
+        if (!ok) {
+            onEnrollmentFailed(messageForReason(reason));
             return;
         }
 
-        showNameInputDialog(identifiers);
+        persistEnrollment(submissionName);
+        tvStatus.setText("註冊成功：" + submissionName);
+        Toast.makeText(this, "已註冊：" + submissionName, Toast.LENGTH_SHORT).show();
+        updateUiState();
+        handler.postDelayed(() -> {
+            setResult(RESULT_OK, new Intent().putExtra("updatedSpeaker", submissionName));
+            finish();
+        }, 800);
     }
 
-    private void showNameInputDialog(List<String> identifiers) {
-        final androidx.appcompat.widget.AppCompatEditText input =
-                new androidx.appcompat.widget.AppCompatEditText(this);
-        input.setText(existingName != null ? existingName : "");
-        input.setTextColor(ContextCompat.getColor(this, android.R.color.black));
-        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        int padding = (int) (16 * getResources().getDisplayMetrics().density);
-        input.setPadding(padding, padding, padding, padding);
-
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("\u8acb\u8f38\u5165\u8aaa\u8a71\u8005\u540d\u7a31")
-                .setView(input)
-                .setPositiveButton("儲存", null)
-                .setNegativeButton("取消", (d, which) -> {})
-                .create();
-
-        dialog.setOnShowListener(dlg ->
-                dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
-                    String name = input.getText().toString().trim();
-                    if (TextUtils.isEmpty(name)) {
-                        Toast.makeText(this, "名稱不可為空", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    persistEnrollment(name, identifiers);
-                    dialog.dismiss();
-                })
-        );
-
-        dialog.show();
+    private void onEnrollmentFailed(String message) {
+        handler.removeCallbacks(enrollTimeout);
+        progressSubmitting.setVisibility(View.GONE);
+        isSubmitting = false;
+        tvStatus.setText(message);
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        updateUiState();
     }
 
-    private void persistEnrollment(String speakerName, List<String> identifiers) {
+    /** Maps the hub's machine reason code to a short human message. */
+    private static String messageForReason(String reason) {
+        if (reason == null || reason.isEmpty()) {
+            return "註冊失敗，請重試";
+        }
+        switch (reason) {
+            case "invalid-name":
+                return "名稱無效：只可使用中文字、英文字母及數字（1–24 字）";
+            case "audio-too-short":
+                return "錄音不足 8 秒，請重新錄製";
+            case "voiceprint-failed":
+                return "無法產生聲紋，請再試一次";
+            default:
+                return "註冊失敗：" + reason;
+        }
+    }
+
+    /**
+     * Mirrors a hub-accepted name locally so the list and the Settings screen can
+     * show it and offer re-enrollment. The VOICEPRINT itself lives only on the
+     * hub; this is a display cache plus a local WAV sample for preview.
+     */
+    private void persistEnrollment(String name) {
         try {
             File dir = new File(getFilesDir(), "enrollments");
             if (!dir.exists() && !dir.mkdirs()) {
                 throw new IOException("無法建立註冊資料夾");
             }
-            String sanitizedName = speakerName.replaceAll("[^a-zA-Z0-9_\\-]", "_");
-            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-            String fileName = sanitizedName + "_" + timeStamp + ".wav";
-            File wavFile = recorder.writeWavFile(dir, fileName);
+            String sanitized = name.replaceAll("[^a-zA-Z0-9]", "_");
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+                    .format(new Date());
+            File wavFile = recorder.writeWavFile(dir, sanitized + "_" + timeStamp + ".wav");
 
             long now = System.currentTimeMillis();
             long createdAt = now;
             boolean muted = false;
-            List<EnrolledSpeaker> existing = EnrolledSpeakerStore.getSpeakers(this);
-            for (EnrolledSpeaker enrolledSpeaker : existing) {
-                if (enrolledSpeaker.getName().equalsIgnoreCase(speakerName)) {
-                    createdAt = enrolledSpeaker.getCreatedAt();
-                    muted = enrolledSpeaker.isMuted();
+            for (EnrolledSpeaker existing : EnrolledSpeakerStore.getSpeakers(this)) {
+                if (existing.getName() != null && existing.getName().equalsIgnoreCase(name)) {
+                    createdAt = existing.getCreatedAt();
+                    muted = existing.isMuted();
                     break;
                 }
             }
             EnrolledSpeaker speaker = new EnrolledSpeaker(
-                    speakerName,
+                    name,
                     languageCode,
-                    new ArrayList<>(identifiers),
+                    new ArrayList<>(),
                     wavFile.getAbsolutePath(),
                     createdAt,
                     now,
-                    muted
-            );
+                    muted);
 
-            if (!TextUtils.isEmpty(existingAudioPath) && !existingAudioPath.equals(wavFile.getAbsolutePath())) {
+            if (!TextUtils.isEmpty(existingAudioPath)) {
                 File oldFile = new File(existingAudioPath);
-                if (oldFile.exists()) {
+                if (oldFile.exists() && !oldFile.getAbsolutePath().equals(wavFile.getAbsolutePath())) {
                     //noinspection ResultOfMethodCallIgnored
                     oldFile.delete();
                 }
             }
 
             EnrolledSpeakerStore.addOrReplace(this, speaker);
-            Toast.makeText(this, "已儲存說話者：" + speakerName, Toast.LENGTH_SHORT).show();
-            setResult(RESULT_OK, new Intent().putExtra("updatedSpeaker", speakerName));
-            finish();
         } catch (IOException e) {
-            Toast.makeText(this, "\u5132\u5b58\u9304\u97f3\u5931\u6557\u003a\u0020" + e.getMessage(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "無法儲存本機註冊資訊：" + e.getMessage(), Toast.LENGTH_LONG).show();
         }
+        refreshEnrolledNames();
     }
 
-    private AppConfig ensureConfig() {
-        AppConfig cfg = ConfigManager.getInstance().getConfig();
-        if (cfg == null) {
-            try {
-                ConfigManager.getInstance().loadConfig(this);
-                cfg = ConfigManager.getInstance().getConfig();
-            } catch (Exception e) {
-                Toast.makeText(this, "\u8b80\u53d6\u914d\u7f6e\u5931\u6557\u003a\u0020" + e.getMessage(), Toast.LENGTH_LONG).show();
-                return null;
-            }
+    private void refreshEnrolledNames() {
+        List<EnrolledSpeaker> speakers = EnrolledSpeakerStore.getSpeakers(this);
+        if (speakers.isEmpty()) {
+            tvEnrolledNames.setText("已註冊：無");
+            return;
         }
-        return cfg;
+        StringBuilder builder = new StringBuilder("已註冊：");
+        for (int i = 0; i < speakers.size(); i++) {
+            if (i > 0) {
+                builder.append("、");
+            }
+            builder.append(speakers.get(i).getName());
+        }
+        tvEnrolledNames.setText(builder.toString());
     }
 
     private void updateUiState() {
-        boolean controlsEnabled = !isRecording && !isSubmitting;
-        btnPlay.setEnabled(hasRecording && controlsEnabled);
-        btnSubmit.setEnabled(hasRecording && controlsEnabled);
-        btnDiscard.setEnabled(hasRecording && controlsEnabled);
-        btnHoldRecord.setEnabled(!isSubmitting);
-        btnHoldRecord.setAlpha(isSubmitting ? 0.6f : 1f);
-
-        if (!hasRecording) {
-            if (isRecording) {
-                tvStatus.setText("\u9304\u97f3\u4e2d\uff0c\u8acb\u4fdd\u6301\u8aaa\u8a71\u2026");
-            } else if (!isSubmitting) {
-                tvStatus.setText("\u8acb\u6309\u4f4f\u6309\u9215\u958b\u59cb\u9304\u97f3");
-            }
-        }
+        boolean idle = !isRecording && !isSubmitting;
+        btnStartRecording.setEnabled(idle);
+        btnStartRecording.setAlpha(idle ? 1f : 0.6f);
+        btnDiscardRecording.setEnabled(hasRecording && idle);
+        btnPlayRecording.setEnabled(hasRecording && idle);
+        btnSubmit.setEnabled(hasRecording && idle);
+        etSpeakerName.setEnabled(idle);
     }
 
     @Override
     protected void onStop() {
         super.onStop();
         stopPlayback();
-        if (recorder != null && isRecording) {
-            recorder.stop();
+        if (isRecording) {
+            handler.removeCallbacks(recordTick);
+            if (recorder != null) {
+                recorder.stop();
+            }
             isRecording = false;
+            hasRecording = false;
+            progressRecord.setProgress(0);
+            updateUiState();
         }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        handler.removeCallbacksAndMessages(null);
         stopPlayback();
         if (recorder != null) {
             recorder.release();
             recorder = null;
+        }
+        if (ecosysClient != null) {
+            ecosysClient.close();
+            ecosysClient = null;
         }
     }
 }
