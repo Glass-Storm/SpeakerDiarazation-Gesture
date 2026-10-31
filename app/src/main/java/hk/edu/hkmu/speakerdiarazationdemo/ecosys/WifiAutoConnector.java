@@ -1,5 +1,6 @@
 package hk.edu.hkmu.speakerdiarazationdemo.ecosys;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
@@ -126,6 +127,9 @@ public final class WifiAutoConnector {
         return wifiManager.isWifiEnabled();
     }
 
+    // The runtime permission is requested by the caller; join() catches the
+    // SecurityException this raises and degrades to manual guidance.
+    @SuppressLint("MissingPermission")
     @SuppressWarnings("deprecation")
     private static int findConfiguredNetworkId(WifiManager wifiManager, String targetSsid) {
         List<WifiConfiguration> configured = wifiManager.getConfiguredNetworks();
