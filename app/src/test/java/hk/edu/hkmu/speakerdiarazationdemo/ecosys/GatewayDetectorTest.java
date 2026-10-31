@@ -27,7 +27,7 @@ public class GatewayDetectorTest {
                 new Route(true, "192.168.43.1"));  // default route
 
         assertEquals("192.168.43.1", GatewayDetector.parseRoutes(routes));
-        assertEquals("192.168.43.1:50051",
+        assertEquals("192.168.43.1:9000",
                 GatewayDetector.endpoint(GatewayDetector.parseRoutes(routes), PORT));
     }
 
@@ -64,6 +64,6 @@ public class GatewayDetectorTest {
                 new Route(true, "10.42.0.1"));
 
         assertEquals("10.42.0.1", GatewayDetector.parseRoutes(routes));
-        assertEquals("10.42.0.1:50051", GatewayDetector.endpoint("10.42.0.1", PORT));
+        assertEquals("10.42.0.1:9000", GatewayDetector.endpoint("10.42.0.1", PORT));
     }
 }

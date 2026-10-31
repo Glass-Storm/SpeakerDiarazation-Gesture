@@ -46,6 +46,7 @@ import hk.edu.hkmu.speakerdiarazationdemo.EnrolledSpeakerStore;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysAudioCapture;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysStreamClient;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.GestureText;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.HubHostStore;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.Pcm16;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.PcmPlayer;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionMode;
@@ -160,6 +161,7 @@ public class MainActivity extends AppCompatActivity {
         if (TextUtils.isEmpty(hubHost)) {
             hubHost = DEFAULT_HUB_HOST;
         }
+        HubHostStore.save(this, hubHost);
 
         initViews();
         initSpeakerColors();

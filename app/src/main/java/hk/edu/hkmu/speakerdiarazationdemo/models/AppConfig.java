@@ -7,12 +7,31 @@ public class AppConfig {
     private String language;
     private Map<String, String> speaker_names;
 
+    private String wifi_ssid;
+    private String wifi_password;
+
     public String getLanguage() {
         return language;
     }
 
     public void setLanguage(String language) {
         this.language = language;
+    }
+
+    public String getWifiSsid() {
+        return wifi_ssid;
+    }
+
+    public void setWifiSsid(String wifiSsid) {
+        this.wifi_ssid = wifiSsid;
+    }
+
+    public String getWifiPassword() {
+        return wifi_password;
+    }
+
+    public void setWifiPassword(String wifiPassword) {
+        this.wifi_password = wifiPassword;
     }
 
     public Map<String, String> getSpeakerNames() {

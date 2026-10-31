@@ -131,6 +131,17 @@
             android:textColor="#FFFFFF"
             android:padding="10dp" />
 
+        <Button
+            android:id="@+id/btnDebugPage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="除錯頁面"
+            android:textSize="14sp"
+            android:backgroundTint="#8D6E63"
+            android:textColor="#FFFFFF"
+            android:padding="10dp" />
+
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
@@ -246,6 +257,33 @@
             android:background="#2E2E2E"
             android:visibility="gone"
             android:layout_marginBottom="12dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#333333"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:id="@+id/tvCurrentRole"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="目前身份：尚未選擇"
+            android:textColor="#BBBBBB"
+            android:textSize="14sp"
+            android:paddingBottom="10dp" />
+
+        <Button
+            android:id="@+id/btnSwitchRole"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="切換身份"
+            android:textSize="14sp"
+            android:backgroundTint="#455A64"
+            android:textColor="#FFFFFF"
+            android:padding="10dp"
+            android:layout_marginBottom="24dp" />
 
     </LinearLayout>
 

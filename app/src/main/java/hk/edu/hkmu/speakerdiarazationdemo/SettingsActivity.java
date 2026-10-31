@@ -38,6 +38,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import hk.edu.hkmu.speakerdiarazationdemo.EnrolledSpeakerStore;
 import hk.edu.hkmu.speakerdiarazationdemo.adapters.TranscriptListAdapter;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionMode;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionModeStore;
 import hk.edu.hkmu.speakerdiarazationdemo.models.EnrolledSpeaker;
 import java.io.BufferedReader;
 import java.io.File;
@@ -79,6 +81,8 @@ public class SettingsActivity extends AppCompatActivity {
     private Button btnLoadMoreTranscripts;
     private Button btnClearTranscripts;
     private TextView tvTranscriptPath;
+    private TextView tvCurrentRole;
+    private Button btnSwitchRole;
 
     private SharedPreferences preferences;
     private MediaPlayer mediaPlayer;
@@ -138,6 +142,7 @@ public class SettingsActivity extends AppCompatActivity {
         btnTtsSetup = findViewById(R.id.btnTtsSetup);
         btnTtsTest = findViewById(R.id.btnTtsTest);
         spinnerTtsEngine = findViewById(R.id.spinnerTtsEngine);
+        Button btnDebugPage = findViewById(R.id.btnDebugPage);
 
         containerEnrolledSpeakers = findViewById(R.id.containerEnrolledSpeakers);
         rvTranscripts = findViewById(R.id.rvTranscripts);
@@ -147,6 +152,8 @@ public class SettingsActivity extends AppCompatActivity {
         btnLoadMoreTranscripts = findViewById(R.id.btnLoadMoreTranscripts);
         btnClearTranscripts = findViewById(R.id.btnClearTranscripts);
         tvTranscriptPath = findViewById(R.id.tvTranscriptPath);
+        tvCurrentRole = findViewById(R.id.tvCurrentRole);
+        btnSwitchRole = findViewById(R.id.btnSwitchRole);
 
         if (btnBack != null) {
             btnBack.setOnClickListener(v -> finish());
@@ -160,8 +167,39 @@ public class SettingsActivity extends AppCompatActivity {
         if (btnTtsTest != null) {
             btnTtsTest.setOnClickListener(v -> testTts());
         }
+        if (btnDebugPage != null) {
+            btnDebugPage.setOnClickListener(v -> startActivity(new Intent(this, DebugActivity.class)));
+        }
+        if (btnSwitchRole != null) {
+            btnSwitchRole.setOnClickListener(v -> switchRole());
+        }
 
+        updateCurrentRole();
         setupTtsEngineSpinner();
+    }
+
+    private void updateCurrentRole() {
+        if (tvCurrentRole == null) {
+            return;
+        }
+        SessionMode mode = SessionModeStore.load(this);
+        String roleName;
+        if (mode == SessionMode.DEAF) {
+            roleName = "聽障人士";
+        } else if (mode == SessionMode.HEARING) {
+            roleName = "健全人士";
+        } else {
+            roleName = "尚未選擇";
+        }
+        tvCurrentRole.setText("目前身份：" + roleName);
+    }
+
+    private void switchRole() {
+        SessionModeStore.clear(this);
+        Intent intent = new Intent(this, RoleChooserActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(intent);
+        finishAffinity();
     }
 
     private void initFontSizeControls() {

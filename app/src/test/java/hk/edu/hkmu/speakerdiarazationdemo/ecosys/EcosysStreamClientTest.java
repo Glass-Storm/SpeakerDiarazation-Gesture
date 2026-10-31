@@ -16,10 +16,14 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 
 public class EcosysStreamClientTest {
@@ -159,6 +163,186 @@ public class EcosysStreamClientTest {
                 secondServer.received.stream().anyMatch(frame ->
                         frame.getPayloadCase() == StreamFrame.PayloadCase.TRANSCRIPT
                                 && "after-reconnect".equals(frame.getTranscript()))));
+    }
+
+    @Test
+    public void healthyStreamReportsConnectedOnce() throws Exception {
+        startServer();
+        AtomicInteger connectedCount = new AtomicInteger();
+        client = new EcosysStreamClient(inProcessFactory(), "glasses-test-id", DeviceRole.DEVICE_ROLE_GLASS);
+        client.addListener(recordingListener(connectedCount));
+
+        client.start();
+
+        assertTrue("a ready stream should report connected",
+                await(() -> connectedCount.get() == 1));
+        Thread.sleep(200L);
+        assertEquals("connected must be reported once per stream", 1, connectedCount.get());
+    }
+
+    @Test
+    public void failingChannelGrowsTheReconnectDelayAndNeverReportsConnected() throws Exception {
+        List<Long> attempts = new CopyOnWriteArrayList<>();
+        AtomicInteger connectedCount = new AtomicInteger();
+        String deadServerName = InProcessServerBuilder.generateName();
+        client = new EcosysStreamClient(
+                () -> {
+                    attempts.add(System.nanoTime());
+                    return InProcessChannelBuilder.forName(deadServerName).directExecutor().build();
+                },
+                "glasses-test-id",
+                DeviceRole.DEVICE_ROLE_GLASS);
+        client.addListener(recordingListener(connectedCount));
+
+        client.start();
+
+        assertTrue("client should keep retrying the dead hub",
+                await(() -> attempts.size() >= 4));
+
+        long gap0 = millisBetween(attempts.get(0), attempts.get(1));
+        long gap1 = millisBetween(attempts.get(1), attempts.get(2));
+        long gap2 = millisBetween(attempts.get(2), attempts.get(3));
+
+        assertAtLeastJitterFloor(gap0, 0);
+        assertAtLeastJitterFloor(gap1, 1);
+        assertAtLeastJitterFloor(gap2, 2);
+        assertTrue("the fourth attempt must back off well past the initial 500 ms, got " + gap2 + " ms",
+                gap2 >= 2 * EcosysStreamClient.INITIAL_BACKOFF_MS - 150L);
+        assertEquals("a failing stream must never report itself as connected",
+                0, connectedCount.get());
+    }
+
+    @Test
+    public void backoffBaseGrowsExponentiallyAndJitterStaysWithinTheCap() {
+        assertEquals(EcosysStreamClient.INITIAL_BACKOFF_MS, EcosysStreamClient.backoffBaseMs(0));
+        for (int attempt = 1; attempt <= EcosysStreamClient.MAX_BACKOFF_SHIFT; attempt++) {
+            long expected = Math.min(EcosysStreamClient.MAX_BACKOFF_MS,
+                    EcosysStreamClient.backoffBaseMs(attempt - 1) * 2L);
+            assertEquals("backoff base should double for attempt " + attempt,
+                    expected, EcosysStreamClient.backoffBaseMs(attempt));
+        }
+        assertEquals("backoff base must stop at the cap",
+                EcosysStreamClient.MAX_BACKOFF_MS,
+                EcosysStreamClient.backoffBaseMs(EcosysStreamClient.MAX_BACKOFF_SHIFT + 3));
+
+        for (int attempt = 0; attempt <= EcosysStreamClient.MAX_BACKOFF_SHIFT + 3; attempt++) {
+            long base = EcosysStreamClient.backoffBaseMs(attempt);
+            for (int sample = 0; sample < 200; sample++) {
+                long delay = EcosysStreamClient.reconnectDelayMs(attempt);
+                assertTrue("delay " + delay + " ms is below the jitter floor for attempt " + attempt,
+                        delay >= base / 2);
+                assertTrue("delay " + delay + " ms is above the jitter ceiling for attempt " + attempt,
+                        delay <= Math.min(EcosysStreamClient.MAX_BACKOFF_MS, base + base / 2));
+                assertTrue("delay " + delay + " ms exceeds the hard cap",
+                        delay <= EcosysStreamClient.MAX_BACKOFF_MS);
+            }
+        }
+    }
+
+    @Test
+    public void stableStreamResetsBackoffSoANewFailureStartsFromTheBase() throws Exception {
+        RecordingStreamService service = startServer();
+        String deadServerName = InProcessServerBuilder.generateName();
+        AtomicBoolean hubUp = new AtomicBoolean(false);
+        AtomicLong lastDisconnectNanos = new AtomicLong(0L);
+        List<Long> attempts = new CopyOnWriteArrayList<>();
+        client = new EcosysStreamClient(
+                () -> {
+                    attempts.add(System.nanoTime());
+                    String name = hubUp.get() ? serverName : deadServerName;
+                    return InProcessChannelBuilder.forName(name).directExecutor().build();
+                },
+                "glasses-test-id",
+                DeviceRole.DEVICE_ROLE_GLASS,
+                200L);
+        client.addListener(new EcosysStreamClient.Listener() {
+            @Override
+            public void onConnected() {
+            }
+
+            @Override
+            public void onFrame(StreamFrame frame) {
+            }
+
+            @Override
+            public void onDisconnected(Throwable cause) {
+                lastDisconnectNanos.set(System.nanoTime());
+            }
+        });
+
+        client.start();
+
+        assertTrue("client should keep retrying the dead hub", await(() -> attempts.size() >= 3));
+        long gap0 = millisBetween(attempts.get(0), attempts.get(1));
+        long gap1 = millisBetween(attempts.get(1), attempts.get(2));
+        assertAtLeastJitterFloor(gap0, 0);
+        assertAtLeastJitterFloor(gap1, 1);
+
+        hubUp.set(true);
+        assertTrue("client should reconnect once the hub returns",
+                await(() -> attempts.size() >= 4 && !service.received.isEmpty()));
+        long gap2 = millisBetween(attempts.get(2), attempts.get(3));
+        assertAtLeastJitterFloor(gap2, 2);
+        assertTrue("the third failed attempt must back off past the initial base, got " + gap2 + " ms",
+                gap2 >= 2 * EcosysStreamClient.INITIAL_BACKOFF_MS - 150L);
+
+        assertTrue("the idle stable stream should reset the accumulated backoff",
+                await(() -> reconnectAttempt(client) == 0L));
+
+        int nextAttemptIndex = attempts.size();
+        lastDisconnectNanos.set(0L);
+        hubUp.set(false);
+        server.shutdownNow();
+        assertTrue("client should notice the stable stream dropping",
+                await(() -> lastDisconnectNanos.get() != 0L));
+        long disconnectNanos = lastDisconnectNanos.get();
+
+        assertTrue("client should retry after the stable stream drops",
+                await(() -> attempts.size() > nextAttemptIndex));
+        long gapAfterStableDrop = millisBetween(disconnectNanos, attempts.get(nextAttemptIndex));
+
+        assertAtLeastJitterFloor(gapAfterStableDrop, 0);
+        assertTrue("after a stable period the delay must restart at the base, got "
+                        + gapAfterStableDrop + " ms",
+                gapAfterStableDrop < 1800L);
+    }
+
+    private static long reconnectAttempt(EcosysStreamClient client) {
+        try {
+            Field field = EcosysStreamClient.class.getDeclaredField("reconnectAttempt");
+            field.setAccessible(true);
+            return ((AtomicLong) field.get(client)).get();
+        } catch (ReflectiveOperationException reflectionFailure) {
+            throw new AssertionError(reflectionFailure);
+        }
+    }
+
+    private EcosysStreamClient.Listener recordingListener(AtomicInteger connectedCount) {
+        return new EcosysStreamClient.Listener() {
+            @Override
+            public void onConnected() {
+                connectedCount.incrementAndGet();
+            }
+
+            @Override
+            public void onFrame(StreamFrame frame) {
+            }
+
+            @Override
+            public void onDisconnected(Throwable cause) {
+            }
+        };
+    }
+
+    private static void assertAtLeastJitterFloor(long observedMs, long attempt) {
+        long floor = EcosysStreamClient.backoffBaseMs(attempt) / 2;
+        assertTrue("attempt " + attempt + " retried after " + observedMs
+                        + " ms, below the jitter floor of " + floor + " ms",
+                observedMs >= floor - 150L);
+    }
+
+    private static long millisBetween(long startNanos, long endNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(endNanos - startNanos);
     }
 
     private static boolean await(BooleanSupplier condition) throws InterruptedException {

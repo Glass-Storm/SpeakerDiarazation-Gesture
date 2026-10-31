@@ -1,3 +1,5 @@
 {
-  "language": "yue"
+  "language": "yue",
+  "wifi_ssid": "EcoSys-Hub",
+  "wifi_password": "ecosys-demo-2026"
 }
