@@ -21,12 +21,8 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.google.mediapipe.tasks.vision.core.RunningMode
-import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.roundToInt
 
 class GestureBackgroundRunner @JvmOverloads constructor(
     private val context: Context,
@@ -69,6 +65,7 @@ class GestureBackgroundRunner @JvmOverloads constructor(
         private const val JPEG_ERROR_MIN_INTERVAL_MS = 3_000L
     }
 
+    private val jpegEncoder = JpegEncoder()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var backgroundExecutor: ExecutorService? = null
     private var jpegCaptureExecutor: ExecutorService? = null
@@ -334,13 +331,7 @@ class GestureBackgroundRunner @JvmOverloads constructor(
         }
     }
 
-    private class JpegPayload(
-        val jpeg: ByteArray,
-        val width: Int,
-        val height: Int,
-    )
-
-    private fun encodeJpeg(imageProxy: ImageProxy): JpegPayload {
+    private fun encodeJpeg(imageProxy: ImageProxy): JpegEncoder.EncodedJpeg {
         var bitmap = imageProxy.toBitmap()
         val rotation = imageProxy.imageInfo.rotationDegrees
         if (rotation != 0) {
@@ -350,36 +341,14 @@ class GestureBackgroundRunner @JvmOverloads constructor(
             if (rotated !== bitmap) bitmap.recycle()
             bitmap = rotated
         }
-        if (bitmap.width > jpegTargetWidth || bitmap.height > jpegTargetHeight) {
-            val scale =
-                min(
-                    jpegTargetWidth.toFloat() / bitmap.width,
-                    jpegTargetHeight.toFloat() / bitmap.height
-                )
-            val scaledWidth = max(1, (bitmap.width * scale).roundToInt())
-            val scaledHeight = max(1, (bitmap.height * scale).roundToInt())
-            val scaled = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
-            if (scaled !== bitmap) bitmap.recycle()
-            bitmap = scaled
-        }
-        val width = bitmap.width
-        val height = bitmap.height
-        val output = ByteArrayOutputStream()
-        try {
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
-                throw IllegalStateException("Bitmap.compress(JPEG) returned false")
-            }
-        } finally {
-            bitmap.recycle()
-        }
-        return JpegPayload(output.toByteArray(), width, height)
+        return jpegEncoder.encode(bitmap, jpegTargetWidth, jpegTargetHeight, JPEG_QUALITY)
     }
 
-    private fun emitJpeg(payload: JpegPayload) {
+    private fun emitJpeg(payload: JpegEncoder.EncodedJpeg) {
         val target = jpegFrameListener ?: return
         val ptsMs = SystemClock.elapsedRealtime()
         try {
-            target.onJpegFrame(payload.jpeg, ptsMs, payload.width, payload.height)
+            target.onJpegFrame(payload.bytes, ptsMs, payload.width, payload.height)
         } catch (t: Throwable) {
             postJpegError("JPEG frame listener failed: ${t.message ?: t.javaClass.simpleName}")
         }
