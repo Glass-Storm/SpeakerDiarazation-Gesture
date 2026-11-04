@@ -17,6 +17,8 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -303,13 +305,23 @@ class GestureBackgroundRunner @JvmOverloads constructor(
         }
     }
 
-    @Suppress("DEPRECATION")
     private fun buildImageCapture(): ImageCapture? {
         return try {
+            // The still is captured at twice the downscaled JPEG size so the hub
+            // downscale keeps detail; ResolutionStrategy pins that bound size.
+            val resolutionSelector =
+                ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(jpegTargetWidth * 2, jpegTargetHeight * 2),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                        ),
+                    )
+                    .build()
             ImageCapture.Builder()
                 .setTargetRotation(getDisplayRotation())
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setTargetResolution(Size(jpegTargetWidth * 2, jpegTargetHeight * 2))
+                .setResolutionSelector(resolutionSelector)
                 .build()
         } catch (t: Throwable) {
             Log.w(TAG, "ImageCapture is unavailable on this device", t)
@@ -369,6 +381,8 @@ class GestureBackgroundRunner @JvmOverloads constructor(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 context.display?.rotation ?: Surface.ROTATION_0
             } else {
+                // Context.display arrived in API 30; below that only the legacy
+                // WindowManager.defaultDisplay can report the rotation.
                 @Suppress("DEPRECATION")
                 wm.defaultDisplay.rotation
             }
