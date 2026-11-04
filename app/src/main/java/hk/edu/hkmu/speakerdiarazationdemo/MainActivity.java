@@ -48,6 +48,7 @@ import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysAudioCapture;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysStreamClient;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.GestureText;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.HubHostStore;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.MainStreamGuard;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.Pcm16;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.PcmPlayer;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionMode;
@@ -278,6 +279,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void openSettings() {
+        // Settings is the enrollment entry; enrollment opens its own GLASS
+        // client, so the main screen must release its stream first. Otherwise
+        // the hub would briefly see two GLASS peers with the same device id.
+        MainStreamGuard.stopBeforeEnrollment(isRecording, ecosysClient != null, this::stopRecording);
         Intent intent = new Intent(this, SettingsActivity.class);
         startActivity(intent);
     }
