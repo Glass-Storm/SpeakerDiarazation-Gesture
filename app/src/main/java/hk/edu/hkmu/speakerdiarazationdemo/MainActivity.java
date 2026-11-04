@@ -1092,7 +1092,7 @@ public class MainActivity extends AppCompatActivity {
                         }
                         break;
                     case GESTURE:
-                        if (sessionMode != null && sessionMode.expectsGestureAudio()) {
+                        if (sessionMode != null && sessionMode.showsGestureText()) {
                             String text = GestureText.displayText(
                                     frame.getGesture().getText(),
                                     frame.getGesture().getLabel());
@@ -1102,7 +1102,7 @@ public class MainActivity extends AppCompatActivity {
                         }
                         break;
                     case TTS_AUDIO:
-                        if (sessionMode != null && sessionMode.expectsGestureAudio()) {
+                        if (sessionMode != null && sessionMode.playsGestureAudio()) {
                             playInboundAudio(frame.getTtsAudio().getPcm1616K().toByteArray());
                         }
                         break;
