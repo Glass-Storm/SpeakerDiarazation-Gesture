@@ -45,6 +45,12 @@ android {
     buildFeatures {
         viewBinding true
     }
+    testOptions {
+        unitTests {
+            // Robolectric needs the merged resources/manifest for android.graphics.
+            includeAndroidResources = true
+        }
+    }
 }
 
 // Note: the model asset `src/main/assets/gesture_recognizer.task` is checked in,
@@ -84,6 +90,8 @@ dependencies {
 
     // Unit testing
     testImplementation 'junit:junit:4.13.2'
+    // Android graphics (Bitmap/JPEG) under a JVM unit test, no device required.
+    testImplementation libs.robolectric
 
     // Instrumented testing
     androidTestImplementation 'androidx.test.ext:junit:1.1.3'

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only test hook: MainActivity is not exported in release, so the S3
+  hearing flow cannot be launched from adb with an explicit hub host when no
+  Wi-Fi gateway exists. This variant manifest exposes it for debug builds only;
+  the release manifest and every other activity stay untouched.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+    </application>
+
+</manifest>

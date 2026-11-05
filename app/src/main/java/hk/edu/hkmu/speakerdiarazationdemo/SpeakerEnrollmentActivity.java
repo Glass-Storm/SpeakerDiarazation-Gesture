@@ -29,6 +29,8 @@ import ecosys.v1.StreamFrame;
 import hk.edu.hkmu.speakerdiarazationdemo.audio.EnrollmentRecorder;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysStreamClient;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EnrollmentName;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.HubHostResolver;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.HubHostStore;
 import hk.edu.hkmu.speakerdiarazationdemo.models.EnrolledSpeaker;
 
 import java.io.File;
@@ -58,10 +60,10 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
     public static final String EXTRA_LANGUAGE = "extra_language";
     public static final String EXTRA_EXISTING_NAME = "extra_existing_name";
     public static final String EXTRA_EXISTING_AUDIO_PATH = "extra_existing_audio_path";
-    /** Optional hub-host override (tools/tests); defaults to the SoftAP gateway. */
+    /** Optional hub-host override (tools/tests); the stored host still wins. */
     public static final String EXTRA_HUB_HOST = "extra_hub_host";
 
-    /** The phone is the SoftAP, so the hub is reachable at the gateway until T22 auto-detects it. */
+    /** The phone is the SoftAP, so the hub is reachable at the gateway until it is saved. */
     private static final String DEFAULT_HUB_HOST = "192.168.43.1";
     private static final String ECOSYS_DEVICE_ID = "glasses";
 
@@ -142,7 +144,12 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
         languageCode = coalesce(getIntent().getStringExtra(EXTRA_LANGUAGE), "yue");
         existingName = getIntent().getStringExtra(EXTRA_EXISTING_NAME);
         existingAudioPath = getIntent().getStringExtra(EXTRA_EXISTING_AUDIO_PATH);
-        hubHost = coalesce(getIntent().getStringExtra(EXTRA_HUB_HOST), DEFAULT_HUB_HOST);
+        // Prefer the host the main screen actually connected to (saved by
+        // HubHostStore), then an explicit intent extra, then the SoftAP gateway.
+        hubHost = HubHostResolver.resolve(
+                HubHostStore.load(this),
+                getIntent().getStringExtra(EXTRA_HUB_HOST),
+                DEFAULT_HUB_HOST);
 
         initViews();
         ensureMicPermission();

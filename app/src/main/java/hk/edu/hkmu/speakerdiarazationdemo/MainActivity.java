@@ -3,6 +3,7 @@ package hk.edu.hkmu.speakerdiarazationdemo;
 import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -47,11 +48,13 @@ import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysAudioCapture;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.EcosysStreamClient;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.GestureText;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.HubHostStore;
+import hk.edu.hkmu.speakerdiarazationdemo.ecosys.MainStreamGuard;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.Pcm16;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.PcmPlayer;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionMode;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SessionModeStore;
 import hk.edu.hkmu.speakerdiarazationdemo.ecosys.SpeakerColourMap;
+import ecosys.v1.ImageFrame;
 import ecosys.v1.StreamFrame;
 import ecosys.v1.StreamResult;
 import hk.edu.hkmu.speakerdiarazationdemo.models.AppConfig;
@@ -119,6 +122,24 @@ public class MainActivity extends AppCompatActivity {
     private static final long GESTURE_OVERLAY_AUTO_HIDE_MS = 5000L;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private Runnable gestureHideRunnable;
+    private boolean hubCameraActive = false;
+    private final GestureBackgroundRunner.JpegFrameListener hubJpegListener =
+            new GestureBackgroundRunner.JpegFrameListener() {
+                @Override
+                public void onJpegFrame(byte[] jpeg, long ptsMs, int width, int height) {
+                    sendImageFrame(jpeg, ptsMs, width, height);
+                }
+
+                @Override
+                public void onJpegError(String message) {
+                    uiHandler.post(() -> {
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        Toast.makeText(MainActivity.this, "手勢影像錯誤：" + message, Toast.LENGTH_SHORT).show();
+                    });
+                }
+            };
     private AudioManager audioManager;
     private AudioManager.OnAudioFocusChangeListener gestureTtsFocusListener;
 
@@ -232,7 +253,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 if (isChecked) {
                     startGestureIfEnabled();
-                } else {
+                } else if (!hubCameraActive) {
                     stopGesture();
                 }
             });
@@ -258,6 +279,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void openSettings() {
+        // Settings is the enrollment entry; enrollment opens its own GLASS
+        // client, so the main screen must release its stream first. Otherwise
+        // the hub would briefly see two GLASS peers with the same device id.
+        MainStreamGuard.stopBeforeEnrollment(isRecording, ecosysClient != null, this::stopRecording);
         Intent intent = new Intent(this, SettingsActivity.class);
         startActivity(intent);
     }
@@ -574,6 +599,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void onGestureRecognized(String label) {
+        if (hubCameraActive) {
+            return;
+        }
         if (tvGestureStatus == null || label == null) {
             return;
         }
@@ -778,6 +806,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startGestureIfEnabled() {
+        if (hubCameraActive) {
+            setGestureOverlayVisible(false);
+            return;
+        }
         if (!isGestureEnabled() || !isRecording) {
             setGestureOverlayVisible(false);
             return;
@@ -831,9 +863,63 @@ public class MainActivity extends AppCompatActivity {
             gestureRunner.stop();
             gestureRunner = null;
         }
+        hubCameraActive = false;
         setGestureOverlayVisible(false);
         updateGestureLabel("--");
         shutdownGestureTts();
+    }
+
+    /**
+     * Starts the HEARING (S3) camera uplink while the hub stream is connected.
+     * The local MediaPipe overlay/TTS stays suppressed for as long as this runs.
+     */
+    private void startHubCameraUplink() {
+        if (hubCameraActive || !isRecording || ecosysClient == null) {
+            return;
+        }
+        if (sessionMode != SessionMode.HEARING) {
+            return;
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[]{Manifest.permission.CAMERA},
+                    PERMISSION_REQUEST_CAMERA
+            );
+            Toast.makeText(this, "需要相機權限才能傳送手勢影像（串流仍保持連線）", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (gestureRunner == null || !gestureRunner.isRunning()) {
+            gestureRunner = new GestureBackgroundRunner(
+                    this,
+                    this,
+                    new GestureBackgroundRunner.Listener() {
+                        @Override
+                        public void onGesture(String label) {
+                            onGestureRecognized(label);
+                        }
+
+                        @Override
+                        public void onError(String message) {
+                            Toast.makeText(MainActivity.this, "手勢錯誤：" + message, Toast.LENGTH_SHORT).show();
+                        }
+                    }
+            );
+        }
+        gestureRunner.setJpegFrameListener(hubJpegListener);
+        gestureRunner.start();
+        hubCameraActive = true;
+        setGestureOverlayVisible(false);
+        Log.i(TAG, "S3 camera uplink active (HEARING)");
+    }
+
+    private void stopHubCameraUplink() {
+        if (!hubCameraActive) {
+            return;
+        }
+        Log.i(TAG, "S3 camera uplink stopped");
+        stopGesture();
     }
 
     private void startRecording() {
@@ -908,6 +994,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean isNetworkAvailable() {
+        if (isDebugHubOverride()) {
+            return true;
+        }
         ConnectivityManager connectivityManager =
                 (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
         if (connectivityManager == null) {
@@ -933,6 +1022,19 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Debug-only harness hook: the S3 健全 flow has no Wi-Fi gateway (the hub is
+     * reached over an adb tunnel) and the glasses is deliberately kept off any
+     * network. When the activity is launched with an explicit
+     * {@link #EXTRA_HUB_HOST}, a debuggable build skips the active-network gate.
+     * Release builds and the normal launcher flow keep the real check.
+     */
+    private boolean isDebugHubOverride() {
+        boolean debuggable =
+                (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        return debuggable && getIntent().hasExtra(EXTRA_HUB_HOST);
+    }
+
     /** Pauses/resumes the 聽障 mic uplink owned by the ecosys stream; 健全 sends no mic. */
     private void togglePauseRecording() {
         if (!isRecording) {
@@ -946,6 +1048,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void pauseAudioCapture() {
+        stopHubCameraUplink();
         if (ecosysAudioCapture != null) {
             ecosysAudioCapture.close();
             ecosysAudioCapture = null;
@@ -963,6 +1066,10 @@ public class MainActivity extends AppCompatActivity {
         }
         isPaused = false;
         maybeStartAudioCapture();
+        if (sessionMode == SessionMode.HEARING) {
+            startGestureIfEnabled();
+            startHubCameraUplink();
+        }
         Toast.makeText(this, "恢復錄音", Toast.LENGTH_SHORT).show();
         updateStatusChip();
     }
@@ -1076,6 +1183,7 @@ public class MainActivity extends AppCompatActivity {
                     btnRecord.setEnabled(true);
                     refreshPauseButtonState();
                     updateStatusChip();
+                    startHubCameraUplink();
                 });
             }
 
@@ -1092,7 +1200,7 @@ public class MainActivity extends AppCompatActivity {
                         }
                         break;
                     case GESTURE:
-                        if (sessionMode != null && sessionMode.expectsGestureAudio()) {
+                        if (sessionMode != null && sessionMode.showsGestureText()) {
                             String text = GestureText.displayText(
                                     frame.getGesture().getText(),
                                     frame.getGesture().getLabel());
@@ -1102,7 +1210,7 @@ public class MainActivity extends AppCompatActivity {
                         }
                         break;
                     case TTS_AUDIO:
-                        if (sessionMode != null && sessionMode.expectsGestureAudio()) {
+                        if (sessionMode != null && sessionMode.playsGestureAudio()) {
                             playInboundAudio(frame.getTtsAudio().getPcm1616K().toByteArray());
                         }
                         break;
@@ -1115,6 +1223,7 @@ public class MainActivity extends AppCompatActivity {
             public void onDisconnected(Throwable cause) {
                 runOnUiThread(() -> {
                     sttConnected = false;
+                    stopHubCameraUplink();
                     refreshPauseButtonState();
                     updateStatusChip();
                 });
@@ -1163,6 +1272,26 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void sendImageFrame(byte[] jpeg, long ptsMs, int width, int height) {
+        EcosysStreamClient client = ecosysClient;
+        if (client == null || jpeg == null || jpeg.length == 0) {
+            return;
+        }
+        try {
+            client.send(StreamFrame.newBuilder()
+                    .setImage(ImageFrame.newBuilder()
+                            .setJpeg(ByteString.copyFrom(jpeg))
+                            .setPtsMs(ptsMs)
+                            .setWidth(width)
+                            .setHeight(height)
+                            .build())
+                    .build());
+            Log.d(TAG, "S3 image frame → hub: " + width + "x" + height + " " + jpeg.length + " bytes");
+        } catch (IllegalStateException notConnected) {
+            Log.d(TAG, "dropping image frame: stream not connected");
+        }
+    }
+
     /** Shows a hub-recognized gesture in the overlay; the audio arrives as a separate {@code tts_audio} frame. */
     private void showInboundGesture(String text) {
         if (text == null || text.isEmpty()) {
@@ -1192,6 +1321,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void stopEcosysStream() {
+        stopHubCameraUplink();
         if (ecosysAudioCapture != null) {
             ecosysAudioCapture.close();
             ecosysAudioCapture = null;
@@ -1384,6 +1514,12 @@ public class MainActivity extends AppCompatActivity {
             if (granted) {
                 Toast.makeText(this, "相機權限已授予", Toast.LENGTH_SHORT).show();
                 startGestureIfEnabled();
+                startHubCameraUplink();
+            } else if (sessionMode == SessionMode.HEARING && isRecording) {
+                Toast.makeText(this,
+                        "未授予相機權限，無法傳送手勢影像；串流仍保持連線",
+                        Toast.LENGTH_LONG).show();
+                setGestureOverlayVisible(false);
             } else {
                 Toast.makeText(this, "未授予相機權限，手勢辨識不會啟用", Toast.LENGTH_LONG).show();
                 setGestureOverlayVisible(false);

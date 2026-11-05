@@ -1,15 +1,24 @@
 package com.google.mediapipe.examples.gesturerecognizer
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
+import android.util.Size
 import android.view.Surface
 import android.view.WindowManager
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -25,6 +34,9 @@ class GestureBackgroundRunner @JvmOverloads constructor(
     private val minGestureScore: Float = 0.65f,
     private val stableFramesRequired: Int = 2,
     private val resetAfterNoGestureMs: Long = 700L,
+    private val jpegIntervalMs: Long = DEFAULT_JPEG_INTERVAL_MS,
+    private val jpegTargetWidth: Int = DEFAULT_JPEG_WIDTH,
+    private val jpegTargetHeight: Int = DEFAULT_JPEG_HEIGHT,
 ) : GestureRecognizerHelper.GestureRecognizerListener {
 
     interface Listener {
@@ -32,15 +44,96 @@ class GestureBackgroundRunner @JvmOverloads constructor(
         fun onError(message: String)
     }
 
+    /**
+     * Receives upright, downscaled JPEG stills for the hub's S3 gesture session.
+     *
+     * This callback exists so the `:gesture` library never has to import the
+     * `:app` module's {@code EcosysStreamClient}: the host app wires this listener
+     * to its own transport. Calling [setJpegFrameListener] switches the runner
+     * into hub mode: local MediaPipe recognition is suppressed and the camera
+     * emits stills instead.
+     */
+    interface JpegFrameListener {
+        fun onJpegFrame(jpeg: ByteArray, ptsMs: Long, width: Int, height: Int)
+        fun onJpegError(message: String)
+    }
+
+    companion object {
+        private const val TAG = "GestureBackgroundRunner"
+        const val DEFAULT_JPEG_INTERVAL_MS = 300L
+        const val DEFAULT_JPEG_WIDTH = 320
+        const val DEFAULT_JPEG_HEIGHT = 240
+        private const val JPEG_QUALITY = 80
+        private const val JPEG_ERROR_MIN_INTERVAL_MS = 3_000L
+    }
+
+    private val jpegEncoder = JpegEncoder()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var backgroundExecutor: ExecutorService? = null
+    private var jpegCaptureExecutor: ExecutorService? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageAnalyzer: ImageAnalysis? = null
+    private var imageCapture: ImageCapture? = null
+    @Volatile
+    private var jpegFrameListener: JpegFrameListener? = null
+    @Volatile
+    private var jpegFallbackActive = false
+    @Volatile
+    private var jpegCaptureInFlight = false
+    @Volatile
+    private var lastJpegFallbackMs = 0L
+    @Volatile
+    private var lastJpegErrorAtMs = 0L
     private var gestureRecognizerHelper: GestureRecognizerHelper? = null
     private var lastEmittedLabel: String? = null
     private var candidateLabel: String? = null
     private var candidateCount: Int = 0
     private var noGestureSinceMs: Long = 0L
+
+    private val jpegTick = object : Runnable {
+        override fun run() {
+            if (!started || jpegFrameListener == null) return
+            val capture = imageCapture ?: return
+            if (jpegCaptureInFlight) {
+                scheduleJpegTick()
+                return
+            }
+            val executor = jpegCaptureExecutor ?: backgroundExecutor
+            if (executor == null) return
+            jpegCaptureInFlight = true
+            try {
+                capture.takePicture(
+                    executor,
+                    object : ImageCapture.OnImageCapturedCallback() {
+                        override fun onCaptureSuccess(image: ImageProxy) {
+                            try {
+                                emitJpeg(encodeJpeg(image))
+                            } catch (t: Throwable) {
+                                postJpegError("影像編碼失敗：${t.message ?: t.javaClass.simpleName}")
+                            } finally {
+                                try {
+                                    image.close()
+                                } catch (_: Throwable) {
+                                }
+                                jpegCaptureInFlight = false
+                                scheduleJpegTick()
+                            }
+                        }
+
+                        override fun onError(exception: ImageCaptureException) {
+                            jpegCaptureInFlight = false
+                            postJpegError("影像擷取失敗：${exception.message ?: "unknown"}")
+                            scheduleJpegTick()
+                        }
+                    }
+                )
+            } catch (t: Throwable) {
+                jpegCaptureInFlight = false
+                postJpegError("影像擷取失敗：${t.message ?: t.javaClass.simpleName}")
+                scheduleJpegTick()
+            }
+        }
+    }
 
     @Volatile
     private var started = false
@@ -50,13 +143,16 @@ class GestureBackgroundRunner @JvmOverloads constructor(
         started = true
 
         backgroundExecutor = Executors.newSingleThreadExecutor()
+        jpegCaptureExecutor = Executors.newSingleThreadExecutor()
 
-        gestureRecognizerHelper = GestureRecognizerHelper(
-            runningMode = RunningMode.LIVE_STREAM,
-            context = context.applicationContext,
-            gestureRecognizerListener = this,
-            mirrorHorizontally = (cameraFacing == CameraSelector.LENS_FACING_FRONT),
-        )
+        if (jpegFrameListener == null) {
+            gestureRecognizerHelper = GestureRecognizerHelper(
+                runningMode = RunningMode.LIVE_STREAM,
+                context = context.applicationContext,
+                gestureRecognizerListener = this,
+                mirrorHorizontally = (cameraFacing == CameraSelector.LENS_FACING_FRONT),
+            )
+        }
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener(
@@ -64,7 +160,7 @@ class GestureBackgroundRunner @JvmOverloads constructor(
                 try {
                     val provider = cameraProviderFuture.get()
                     cameraProvider = provider
-                    bindAnalysisUseCase(provider)
+                    bindUseCases(provider)
                 } catch (t: Throwable) {
                     started = false
                     postError("Failed to start camera: ${t.message ?: t.javaClass.simpleName}")
@@ -74,9 +170,28 @@ class GestureBackgroundRunner @JvmOverloads constructor(
         )
     }
 
+    /**
+     * Switches the runner between local recognition (a `null` listener) and hub
+     * S3 uplink mode. Safe before or after [start]; a live runner rebinds so the
+     * requested use-case set takes effect immediately.
+     */
+    fun setJpegFrameListener(listener: JpegFrameListener?) {
+        jpegFrameListener = listener
+        if (!started) return
+        val provider = cameraProvider ?: return
+        try {
+            bindUseCases(provider)
+        } catch (t: Throwable) {
+            postError("Failed to reconfigure camera: ${t.message ?: t.javaClass.simpleName}")
+        }
+    }
+
     fun stop() {
         if (!started) return
         started = false
+
+        mainHandler.removeCallbacks(jpegTick)
+        jpegCaptureInFlight = false
 
         try {
             cameraProvider?.unbindAll()
@@ -84,6 +199,10 @@ class GestureBackgroundRunner @JvmOverloads constructor(
         }
         cameraProvider = null
         imageAnalyzer = null
+        imageCapture = null
+        jpegFallbackActive = false
+        lastJpegFallbackMs = 0L
+        lastJpegErrorAtMs = 0L
 
         try {
             gestureRecognizerHelper?.clearGestureRecognizer()
@@ -93,6 +212,8 @@ class GestureBackgroundRunner @JvmOverloads constructor(
 
         backgroundExecutor?.shutdown()
         backgroundExecutor = null
+        jpegCaptureExecutor?.shutdown()
+        jpegCaptureExecutor = null
 
         lastEmittedLabel = null
         candidateLabel = null
@@ -102,9 +223,9 @@ class GestureBackgroundRunner @JvmOverloads constructor(
 
     fun isRunning(): Boolean = started
 
-    private fun bindAnalysisUseCase(provider: ProcessCameraProvider) {
+    private fun bindUseCases(provider: ProcessCameraProvider) {
         val executor = backgroundExecutor ?: return
-        val helper = gestureRecognizerHelper ?: return
+        val hubUplink = jpegFrameListener != null
 
         val cameraSelector = CameraSelector.Builder()
             .requireLensFacing(cameraFacing)
@@ -117,21 +238,141 @@ class GestureBackgroundRunner @JvmOverloads constructor(
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .build()
             .also { analysis ->
-                analysis.setAnalyzer(executor) { imageProxy ->
-                    try {
-                        helper.recognizeLiveStream(imageProxy)
-                    } catch (t: Throwable) {
-                        try {
-                            imageProxy.close()
-                        } catch (_: Throwable) {
-                        }
-                        postError("Gesture analysis failed: ${t.message ?: t.javaClass.simpleName}")
-                    }
-                }
+                analysis.setAnalyzer(executor) { imageProxy -> handleAnalysisFrame(imageProxy) }
             }
 
+        val capture = if (hubUplink) buildImageCapture() else null
+
         provider.unbindAll()
+        if (capture != null) {
+            try {
+                provider.bindToLifecycle(lifecycleOwner, cameraSelector, imageAnalyzer, capture)
+                imageCapture = capture
+                jpegFallbackActive = false
+                Log.i(
+                    TAG,
+                    "bound ImageAnalysis + ImageCapture; JPEG stills every ${jpegIntervalMs}ms"
+                )
+                startJpegLoop()
+                return
+            } catch (t: Throwable) {
+                Log.w(
+                    TAG,
+                    "ImageAnalysis + ImageCapture co-bind rejected; falling back to analysis JPEGs",
+                    t
+                )
+                imageCapture = null
+                jpegFallbackActive = true
+                provider.unbindAll()
+            }
+        } else {
+            imageCapture = null
+            jpegFallbackActive = false
+        }
         provider.bindToLifecycle(lifecycleOwner, cameraSelector, imageAnalyzer)
+    }
+
+    private fun handleAnalysisFrame(imageProxy: ImageProxy) {
+        val hubUplink = jpegFrameListener != null
+        try {
+            if (hubUplink) {
+                if (jpegFallbackActive) {
+                    val now = SystemClock.uptimeMillis()
+                    if (now - lastJpegFallbackMs >= jpegIntervalMs) {
+                        lastJpegFallbackMs = now
+                        emitJpeg(encodeJpeg(imageProxy))
+                    }
+                }
+                imageProxy.close()
+                return
+            }
+            val helper = gestureRecognizerHelper
+            if (helper == null) {
+                imageProxy.close()
+            } else {
+                helper.recognizeLiveStream(imageProxy)
+            }
+        } catch (t: Throwable) {
+            try {
+                imageProxy.close()
+            } catch (_: Throwable) {
+            }
+            if (hubUplink) {
+                postJpegError("影像處理失敗：${t.message ?: t.javaClass.simpleName}")
+            } else {
+                postError("Gesture analysis failed: ${t.message ?: t.javaClass.simpleName}")
+            }
+        }
+    }
+
+    private fun buildImageCapture(): ImageCapture? {
+        return try {
+            // The still is captured at twice the downscaled JPEG size so the hub
+            // downscale keeps detail; ResolutionStrategy pins that bound size.
+            val resolutionSelector =
+                ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(jpegTargetWidth * 2, jpegTargetHeight * 2),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                        ),
+                    )
+                    .build()
+            ImageCapture.Builder()
+                .setTargetRotation(getDisplayRotation())
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .setResolutionSelector(resolutionSelector)
+                .build()
+        } catch (t: Throwable) {
+            Log.w(TAG, "ImageCapture is unavailable on this device", t)
+            postJpegError("相機不支援靜態影像擷取：${t.message ?: t.javaClass.simpleName}")
+            null
+        }
+    }
+
+    private fun startJpegLoop() {
+        if (jpegFrameListener == null || imageCapture == null) return
+        mainHandler.removeCallbacks(jpegTick)
+        mainHandler.post(jpegTick)
+    }
+
+    private fun scheduleJpegTick() {
+        mainHandler.removeCallbacks(jpegTick)
+        if (started && jpegFrameListener != null && imageCapture != null) {
+            mainHandler.postDelayed(jpegTick, jpegIntervalMs)
+        }
+    }
+
+    private fun encodeJpeg(imageProxy: ImageProxy): JpegEncoder.EncodedJpeg {
+        var bitmap = imageProxy.toBitmap()
+        val rotation = imageProxy.imageInfo.rotationDegrees
+        if (rotation != 0) {
+            val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+            val rotated =
+                Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            if (rotated !== bitmap) bitmap.recycle()
+            bitmap = rotated
+        }
+        return jpegEncoder.encode(bitmap, jpegTargetWidth, jpegTargetHeight, JPEG_QUALITY)
+    }
+
+    private fun emitJpeg(payload: JpegEncoder.EncodedJpeg) {
+        val target = jpegFrameListener ?: return
+        val ptsMs = SystemClock.elapsedRealtime()
+        try {
+            target.onJpegFrame(payload.bytes, ptsMs, payload.width, payload.height)
+        } catch (t: Throwable) {
+            postJpegError("JPEG frame listener failed: ${t.message ?: t.javaClass.simpleName}")
+        }
+    }
+
+    private fun postJpegError(message: String) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastJpegErrorAtMs < JPEG_ERROR_MIN_INTERVAL_MS) return
+        lastJpegErrorAtMs = now
+        mainHandler.post {
+            jpegFrameListener?.onJpegError(message)
+        }
     }
 
     private fun getDisplayRotation(): Int {
@@ -140,6 +381,8 @@ class GestureBackgroundRunner @JvmOverloads constructor(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 context.display?.rotation ?: Surface.ROTATION_0
             } else {
+                // Context.display arrived in API 30; below that only the legacy
+                // WindowManager.defaultDisplay can report the rotation.
                 @Suppress("DEPRECATION")
                 wm.defaultDisplay.rotation
             }
