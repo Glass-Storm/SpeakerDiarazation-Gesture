@@ -30,14 +30,45 @@ jobs:
           java-version: "21"
 
       - name: Publish the hub contract to Maven local
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           HUB="${{ github.workspace }}/../hub"
           ENGINE="${{ github.workspace }}/../../ai-android"
           git clone --depth 1 https://github.com/Glass-Storm/phone-manager.git "$HUB"
           git clone --depth 1 https://github.com/Glass-Storm/ai-android.git "$ENGINE"
           git -C "$ENGINE" checkout --detach c0644eada44c242604e07546ff93aef80d9563f8
-          bash "$ENGINE/scripts/fetch-sherpa-aar.sh"
-          cd "$HUB" && ./gradlew :contract:publishToMavenLocal
+
+          # The pinned AAR is SHA-256 verified by the ai-android script. The
+          # github.com release-download edge intermittently returns 504, so fall
+          # back to the GitHub API asset endpoint; the script's SHA-256 check still
+          # gates whatever lands in libs/.
+          if ! bash "$ENGINE/scripts/fetch-sherpa-aar.sh"; then
+            AAR_NAME="sherpa-onnx-1.13.8.aar"
+            mkdir -p "$ENGINE/libs"
+            ASSET_ID=$(gh api repos/k2-fsa/sherpa-onnx/releases/tags/v1.13.8 \
+              --jq ".assets[] | select(.name == \"$AAR_NAME\") | .id")
+            test -n "$ASSET_ID"
+            curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/octet-stream" \
+              -o "$ENGINE/libs/$AAR_NAME" \
+              "https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/assets/$ASSET_ID"
+            bash "$ENGINE/scripts/fetch-sherpa-aar.sh"
+          fi
+
+          # The Gradle wrapper download from services.gradle.org is also flaky;
+          # retry a few times before giving up.
+          for attempt in 1 2 3; do
+            if (cd "$HUB" && ./gradlew :contract:publishToMavenLocal); then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "hub contract publish attempt $attempt failed; retrying"
+            sleep 10
+          done
 
       - name: Set up JDK 17 (glasses app)
         uses: actions/setup-java@v5
