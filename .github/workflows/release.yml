@@ -15,8 +15,6 @@ jobs:
   release:
     name: Build & publish debug APK
     runs-on: ubuntu-latest
-    env:
-      PREFETCH_MAVEN_REPO: ${{ runner.temp }}/prefetch-repo
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,8 +64,10 @@ jobs:
       - name: Prefetch the Kotlin compiler jars via the GitHub API
         env:
           GH_TOKEN: ${{ github.token }}
+          PREFETCH_MAVEN_REPO: ${{ runner.temp }}/prefetch-repo
         run: |
           set -euo pipefail
+          echo "PREFETCH_MAVEN_REPO=$PREFETCH_MAVEN_REPO" >> "$GITHUB_ENV"
           for version in 2.0.21 2.1.0; do
             dir="$PREFETCH_MAVEN_REPO/org/jetbrains/kotlin/kotlin-compiler-embeddable/$version"
             mkdir -p "$dir"
