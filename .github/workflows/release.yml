@@ -13,13 +13,33 @@ concurrency:
 
 jobs:
   release:
-    name: Signed release APK
+    name: Build & publish debug APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      # `:app` consumes com.glassstorm.phonemanager:contract:1.1.0 from MAVEN LOCAL
+      # (the hub publishes it with :contract:publishToMavenLocal; it is on no remote
+      # repository). Publish it from a hub checkout, and give the hub its pinned
+      # ai-android composite build + the gitignored sherpa-onnx AAR.
+      - name: Set up JDK 21 (hub contract)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Publish the hub contract to Maven local
+        run: |
+          HUB="${{ github.workspace }}/../hub"
+          ENGINE="${{ github.workspace }}/../../ai-android"
+          git clone --depth 1 https://github.com/Glass-Storm/phone-manager.git "$HUB"
+          git clone --depth 1 https://github.com/Glass-Storm/ai-android.git "$ENGINE"
+          git -C "$ENGINE" checkout --detach c0644eada44c242604e07546ff93aef80d9563f8
+          bash "$ENGINE/scripts/fetch-sherpa-aar.sh"
+          cd "$HUB" && ./gradlew :contract:publishToMavenLocal
+
+      - name: Set up JDK 17 (glasses app)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -28,21 +48,42 @@ jobs:
       - name: Set up Gradle (with caching)
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build signed release APK
-        run: ./gradlew :app:assembleRelease --stacktrace
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace
         env:
           GIT_TAG: ${{ github.ref_name }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
 
-      - name: Verify APK is signed
-        run: |
-          APK="app/build/outputs/apk/release/app-release.apk"
-          test -f "$APK"
-          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify --print-certs "$APK"
+      - name: Publish the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: SpeakerDiarazation-Gesture ${{ github.ref_name }}
+          body: |
+            Smart-glasses Android app (`DEVICE_ROLE_GLASS`), built from tag
+            `${{ github.ref_name }}`. It streams audio and video to the phone hub and
+            renders the transcripts the hub returns.
 
-      - name: Create GitHub release with APK
-        run: gh release create "$GITHUB_REF_NAME" "$APK" --title "$GITHUB_REF_NAME" --generate-notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APK: app/build/outputs/apk/release/app-release.apk
+            ## Asset
+
+            `app-debug.apk` is debug-signed and installable:
+
+            ```bash
+            adb install -r app-debug.apk
+            ```
+
+            ## Flows
+
+            - **DEAF mode**: tap **開始錄音** to start streaming to the hub. Set the hub
+              host to `10.240.85.29` (the phone hub's hotspot address, gRPC port `9000`).
+            - **HEARING mode**: use the gesture flow to send camera frames to the hub and
+              receive gesture results on the same stream.
+
+            ## Companion releases
+
+            - Phone hub: `v1.0.0`
+            - Raspberry Pi necklace daemon: `v0.1.0`
+
+            The three-end demo is hub (phone) + glasses (DEAF/HEARING, this app) + Pi necklace.
+          files: app/build/outputs/apk/debug/app-debug.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true
