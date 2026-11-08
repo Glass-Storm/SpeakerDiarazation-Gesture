@@ -15,14 +15,16 @@ jobs:
   release:
     name: Build & publish debug APK
     runs-on: ubuntu-latest
+    env:
+      PREFETCH_MAVEN_REPO: ${{ runner.temp }}/prefetch-repo
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The GitHub-hosted runners have no warm Gradle cache for this repo, and the
-      # github.com release-download edge intermittently answers 504. Seed the pinned
-      # Gradle 8.13 distribution from the GitHub API so neither `./gradlew` nor
-      # `gradle/actions/setup-gradle` has to fetch it from services.gradle.org.
+      # The github.com release-download edge intermittently answers 504, and it is
+      # the redirect target for both services.gradle.org and some Maven Central
+      # jars. Seed the pinned Gradle 8.13 distribution through the GitHub API so
+      # neither `./gradlew` nor `gradle/actions/setup-gradle` fetches it.
       - name: Seed the pinned Gradle distribution from the GitHub API
         env:
           GH_TOKEN: ${{ github.token }}
@@ -55,24 +57,57 @@ jobs:
             touch "$dist/gradle-${version}-bin.zip.ok"
           fi
 
-      # The Gradle Plugin Portal redirects some large Kotlin artifacts (notably
-      # kotlin-compiler-embeddable) to github.com release downloads. Put a
-      # Maven-Central-backed repository for the org.jetbrains.kotlin group ahead of
-      # the portal so those jars come from repo.maven.apache.org instead. The portal
-      # stays last for the plugin markers only it hosts (e.g. org.gradle.kotlin).
-      - name: Prefer Maven Central for the Kotlin toolchain
+      # The Gradle Plugin Portal (and, on affected edges, Maven Central) redirects
+      # the large `kotlin-compiler-embeddable` jars to github.com release downloads.
+      # Fetch them through the GitHub API into a local Maven repository that wins
+      # for the org.jetbrains.kotlin group, and take the small POMs from Maven
+      # Central. Both compiler versions in play are cached: 2.0.21 (the Kotlin DSL
+      # in the hub's build-logic) and 2.1.0 (the projects' Kotlin plugin).
+      - name: Prefetch the Kotlin compiler jars via the GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          cat > "$RUNNER_TEMP/kotlin-from-maven-central.gradle" <<'EOF'
+          set -euo pipefail
+          for version in 2.0.21 2.1.0; do
+            dir="$PREFETCH_MAVEN_REPO/org/jetbrains/kotlin/kotlin-compiler-embeddable/$version"
+            mkdir -p "$dir"
+            curl -fsSL -o "$dir/kotlin-compiler-embeddable-${version}.pom" \
+              "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/${version}/kotlin-compiler-embeddable-${version}.pom" \
+              || curl -fsSL -o "$dir/kotlin-compiler-embeddable-${version}.pom" \
+              "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/${version}/kotlin-compiler-embeddable-${version}.pom"
+            asset_id=$(gh api "repos/JetBrains/kotlin/releases/tags/v${version}" \
+              --jq ".assets[] | select(.name == \"kotlin-compiler-embeddable-${version}.jar\") | .id")
+            test -n "$asset_id"
+            curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/octet-stream" \
+              -o "$dir/kotlin-compiler-embeddable-${version}.jar" \
+              "https://api.github.com/repos/JetBrains/kotlin/releases/assets/$asset_id"
+          done
+
+      - name: Resolve the Kotlin toolchain from the prefetched repository
+        run: |
+          cat > "$RUNNER_TEMP/prefetch-kotlin.gradle" <<'EOF'
+          def prefetch = new File(System.getenv("PREFETCH_MAVEN_REPO")).toURI()
           gradle.beforeSettings { settings ->
               def repos = settings.pluginManagement.repositories
               repos.clear()
-              repos.google()
               repos.maven {
-                  url = uri("https://repo.maven.apache.org/maven2")
+                  url = prefetch
                   content { includeGroupByRegex("org\\.jetbrains\\.kotlin.*") }
               }
+              repos.google()
               repos.mavenCentral()
               repos.gradlePluginPortal()
+          }
+          gradle.settingsEvaluated { settings ->
+              def repos = settings.dependencyResolutionManagement.repositories
+              def repo = repos.maven {
+                  url = prefetch
+                  content { includeGroupByRegex("org\\.jetbrains\\.kotlin.*") }
+              }
+              repos.remove(repo)
+              repos.add(0, repo)
           }
           EOF
 
@@ -92,7 +127,7 @@ jobs:
         run: |
           HUB="${{ github.workspace }}/../hub"
           ENGINE="${{ github.workspace }}/../../ai-android"
-          INIT="$RUNNER_TEMP/kotlin-from-maven-central.gradle"
+          INIT="$RUNNER_TEMP/prefetch-kotlin.gradle"
           git clone --depth 1 https://github.com/Glass-Storm/phone-manager.git "$HUB"
           git clone --depth 1 https://github.com/Glass-Storm/ai-android.git "$ENGINE"
           git -C "$ENGINE" checkout --detach c0644eada44c242604e07546ff93aef80d9563f8
@@ -138,7 +173,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace --init-script "$RUNNER_TEMP/kotlin-from-maven-central.gradle"
+        run: ./gradlew :app:assembleDebug --stacktrace --init-script "$RUNNER_TEMP/prefetch-kotlin.gradle"
         env:
           GIT_TAG: ${{ github.ref_name }}
 
