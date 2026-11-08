@@ -19,6 +19,63 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The GitHub-hosted runners have no warm Gradle cache for this repo, and the
+      # github.com release-download edge intermittently answers 504. Seed the pinned
+      # Gradle 8.13 distribution from the GitHub API so neither `./gradlew` nor
+      # `gradle/actions/setup-gradle` has to fetch it from services.gradle.org.
+      - name: Seed the pinned Gradle distribution from the GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="8.13"
+          url="https://services.gradle.org/distributions/gradle-${version}-bin.zip"
+          hash=$(python3 -c '
+          import hashlib, sys
+          n = int.from_bytes(hashlib.md5(sys.argv[1].encode()).digest(), "big")
+          digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+          out = ""
+          while n:
+              out = digits[n % 36] + out
+              n //= 36
+          print(out or "0")
+          ' "$url")
+          dist="$HOME/.gradle/wrapper/dists/gradle-${version}-bin/${hash}"
+          mkdir -p "$dist"
+          if [ ! -f "$dist/gradle-${version}-bin.zip.ok" ]; then
+            asset_id=$(gh api "repos/gradle/gradle-distributions/releases/tags/v${version}.0" \
+              --jq ".assets[] | select(.name == \"gradle-${version}-bin.zip\") | .id")
+            test -n "$asset_id"
+            curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/octet-stream" \
+              -o "$dist/gradle-${version}-bin.zip" \
+              "https://api.github.com/repos/gradle/gradle-distributions/releases/assets/$asset_id"
+            unzip -q "$dist/gradle-${version}-bin.zip" -d "$dist"
+            touch "$dist/gradle-${version}-bin.zip.ok"
+          fi
+
+      # The Gradle Plugin Portal redirects some large Kotlin artifacts (notably
+      # kotlin-compiler-embeddable) to github.com release downloads. Put a
+      # Maven-Central-backed repository for the org.jetbrains.kotlin group ahead of
+      # the portal so those jars come from repo.maven.apache.org instead. The portal
+      # stays last for the plugin markers only it hosts (e.g. org.gradle.kotlin).
+      - name: Prefer Maven Central for the Kotlin toolchain
+        run: |
+          cat > "$RUNNER_TEMP/kotlin-from-maven-central.gradle" <<'EOF'
+          gradle.beforeSettings { settings ->
+              def repos = settings.pluginManagement.repositories
+              repos.clear()
+              repos.google()
+              repos.maven {
+                  url = uri("https://repo.maven.apache.org/maven2")
+                  content { includeGroupByRegex("org\\.jetbrains\\.kotlin.*") }
+              }
+              repos.mavenCentral()
+              repos.gradlePluginPortal()
+          }
+          EOF
+
       # `:app` consumes com.glassstorm.phonemanager:contract:1.1.0 from MAVEN LOCAL
       # (the hub publishes it with :contract:publishToMavenLocal; it is on no remote
       # repository). Publish it from a hub checkout, and give the hub its pinned
@@ -35,6 +92,7 @@ jobs:
         run: |
           HUB="${{ github.workspace }}/../hub"
           ENGINE="${{ github.workspace }}/../../ai-android"
+          INIT="$RUNNER_TEMP/kotlin-from-maven-central.gradle"
           git clone --depth 1 https://github.com/Glass-Storm/phone-manager.git "$HUB"
           git clone --depth 1 https://github.com/Glass-Storm/ai-android.git "$ENGINE"
           git -C "$ENGINE" checkout --detach c0644eada44c242604e07546ff93aef80d9563f8
@@ -57,10 +115,10 @@ jobs:
             bash "$ENGINE/scripts/fetch-sherpa-aar.sh"
           fi
 
-          # The Gradle wrapper download from services.gradle.org is also flaky;
-          # retry a few times before giving up.
+          # The Gradle distribution is seeded above, but keep the retry so a
+          # transient dependency-download failure does not fail the release.
           for attempt in 1 2 3; do
-            if (cd "$HUB" && ./gradlew :contract:publishToMavenLocal); then
+            if (cd "$HUB" && ./gradlew :contract:publishToMavenLocal --init-script "$INIT"); then
               break
             fi
             if [ "$attempt" -eq 3 ]; then
@@ -80,7 +138,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+        run: ./gradlew :app:assembleDebug --stacktrace --init-script "$RUNNER_TEMP/kotlin-from-maven-central.gradle"
         env:
           GIT_TAG: ${{ github.ref_name }}
 
