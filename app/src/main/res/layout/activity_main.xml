@@ -15,34 +15,15 @@
         android:orientation="horizontal"
         android:gravity="start|center_vertical"
         android:layout_marginStart="16dp"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="8dp"
         android:layout_marginEnd="16dp"
+        android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
         <TextView
-            android:id="@+id/tvHubConnection"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:accessibilityLiveRegion="polite"
-            android:textColor="#FFD19A"
-            android:textSize="15sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btnConnectRetry"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#37474F"
-            android:text="重新偵測" />
-
-        <TextView
             android:id="@+id/tvStatusChip"
-            android:layout_marginStart="8dp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_status_chip"
@@ -50,7 +31,7 @@
             android:paddingRight="12dp"
             android:paddingTop="6dp"
             android:paddingBottom="6dp"
-            android:text="● 連線中"
+            android:text="正在連線到 Hub…"
             android:textColor="#FFFFFF"
             android:textSize="13sp"
             android:visibility="gone" />
@@ -71,14 +52,13 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- 未录音时的控制面板 -->
-    <LinearLayout
-        android:id="@+id/layoutControls"
+    <ScrollView
+        android:id="@+id/sessionControls"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp"
-        app:layout_constraintTop_toBottomOf="@id/layoutTopBar"
+        android:layout_height="0dp"
+        android:fillViewport="true"
+        app:layout_constraintWidth_max="620dp"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toBottomOf="parent">
@@ -86,82 +66,164 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="8dp">
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="start"
+                    android:text="語者辨識"
+                    android:textColor="#FFFFFF"
+                    android:textSize="24sp"
+                    android:textStyle="bold" />
+
+                <ImageButton
+                    android:id="@+id/btnSettings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@android:color/transparent"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_settings"
+                    app:tint="#FFFFFF"
+                    android:contentDescription="設定"
+                    android:focusable="true"
+                    android:layout_marginStart="8dp" />
+            </LinearLayout>
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:background="@drawable/bg_session_connection"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp">
+
+                <TextView
+                    android:id="@+id/tvHubConnection"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:accessibilityLiveRegion="polite"
+                    android:textColor="#FFD19A"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    app:layout_constrainedWidth="true"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toStartOf="@id/btnConnectRetry"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintHorizontal_chainStyle="packed"
+                    app:layout_constraintHorizontal_bias="0" />
+
+                <Button
+                    android:id="@+id/btnConnectRetry"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="重新偵測"
+                    android:textColor="#D3E3E8"
+                    app:layout_constraintStart_toEndOf="@id/tvHubConnection"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
             <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:paddingBottom="16dp"
-                android:text="語者辨識"
-                android:textColor="#FFFFFF"
-                android:textSize="24sp"
-                android:textStyle="bold" />
-
-            <ImageButton
-                android:id="@+id/btnSettings"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@android:color/transparent"
+                android:labelFor="@id/sessionRole"
+                android:text="身份"
+                android:textSize="16sp"
+                android:textColor="#FFFFFF" />
+
+            <RadioGroup
+                android:id="@+id/sessionRole"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:saveEnabled="false">
+
+                <RadioButton
+                    android:id="@+id/roleDeaf"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="20dp"
+                    android:minHeight="48dp"
+                    android:saveEnabled="false"
+                    android:buttonTint="#A7E5BD"
+                    android:text="聽障人士"
+                    android:textColor="#FFFFFF" />
+
+                <RadioButton
+                    android:id="@+id/roleHearing"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:saveEnabled="false"
+                    android:buttonTint="#A7E5BD"
+                    android:text="健全人士"
+                    android:textColor="#FFFFFF" />
+            </RadioGroup>
+
+            <TextView
+                android:id="@+id/tvLanguageLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="語言"
+                android:textSize="16sp"
+                android:textColor="#FFFFFF"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="4dp"/>
+
+            <Spinner
+                android:id="@+id/spinnerLanguage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_spinner_background"
                 android:padding="8dp"
-                android:src="@drawable/ic_settings"
-                app:tint="#FFFFFF"
-                android:contentDescription="設定"
-                android:focusable="true"
-                android:layout_marginStart="8dp" />
+                android:popupBackground="@drawable/bg_spinner_popup"
+                android:layout_marginBottom="16dp"/>
+
+            <Button
+                android:id="@+id/btnRecord"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="開始錄音"
+                android:textSize="18sp"
+                android:backgroundTint="@color/session_record_background"
+                android:textColor="#FFFFFF"
+                android:padding="16dp"/>
+
+            <CheckBox
+                android:id="@+id/cbEnableGesture"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="啟用手勢（相機）"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btnTestGesture"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="僅測試手勢"
+                android:textSize="16sp"
+                android:backgroundTint="#607D8B"
+                android:textColor="#FFFFFF"
+                android:padding="14dp"/>
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/tvLanguageLabel"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="語言"
-            android:textSize="16sp"
-            android:textColor="#FFFFFF"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="4dp"/>
-
-        <Spinner
-            android:id="@+id/spinnerLanguage"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_spinner_background"
-            android:padding="8dp"
-            android:popupBackground="@drawable/bg_spinner_popup"
-            android:layout_marginBottom="16dp"/>
-
-        <Button
-            android:id="@+id/btnRecord"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="開始錄音"
-            android:textSize="18sp"
-            android:backgroundTint="#4CAF50"
-            android:textColor="#FFFFFF"
-            android:padding="16dp"/>
-
-        <CheckBox
-            android:id="@+id/cbEnableGesture"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="啟用手勢（相機）"
-            android:textColor="#FFFFFF" />
-
-        <Button
-            android:id="@+id/btnTestGesture"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="僅測試手勢"
-            android:textSize="16sp"
-            android:backgroundTint="#607D8B"
-            android:textColor="#FFFFFF"
-            android:padding="14dp"/>
-    </LinearLayout>
+    </ScrollView>
 
     <!-- 字幕区域（录音时显示） -->
     <ScrollView

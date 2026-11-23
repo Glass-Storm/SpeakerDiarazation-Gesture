@@ -4,7 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 /**
- * Persists the deaf/hearing {@link SessionMode} chosen on the first screen.
+ * Persists the deaf/hearing {@link SessionMode} chosen on the session screen.
  *
  * <p>Kept separate from {@link SessionMode} so the enum stays pure and testable;
  * only this thin wrapper touches Android storage.

@@ -13,7 +13,6 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.os.Handler;
 import android.os.Looper;
-import android.content.res.ColorStateList;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
@@ -28,6 +27,7 @@ import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.CheckBox;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -66,8 +66,6 @@ import hk.edu.hkmu.speakerdiarazationdemo.SettingsActivity;
 
 public class MainActivity extends HubConnectionActivity {
     private static final String TAG = "MainActivity";
-    /** Carries the chosen {@link SessionMode} name from RoleChooserActivity to this screen. */
-    public static final String EXTRA_SESSION_MODE = "extra_session_mode";
     /** Optional hub-host override for the debug harness. */
     public static final String EXTRA_HUB_HOST = "extra_hub_host";
     private static final String ECOSYS_DEVICE_ID = "glasses";
@@ -82,7 +80,8 @@ public class MainActivity extends HubConnectionActivity {
     private static final float MAX_FONT_SIZE_SP = 48f;
     
     private View rootContainer;
-    private LinearLayout layoutControls;
+    private View sessionControls;
+    private View recordingStatusBar;
     private LinearLayout layoutRecordingControls;
     private Button btnRecord;
     private ImageButton btnSettings;
@@ -160,13 +159,6 @@ public class MainActivity extends HubConnectionActivity {
         super.onCreate(savedInstanceState);
 
         sessionMode = SessionModeStore.load(this);
-        if (sessionMode == null) {
-            Toast.makeText(this, "請先選擇身份才能開始", Toast.LENGTH_LONG).show();
-            startActivity(new Intent(this, RoleChooserActivity.class));
-            finish();
-            return;
-        }
-
         setContentView(R.layout.activity_main);
         
         preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
@@ -179,7 +171,7 @@ public class MainActivity extends HubConnectionActivity {
         
     }
 
-    /** The deaf/hearing role chosen on the first screen; gates payload kind and display. */
+    /** The deaf/hearing role chosen on the session screen; gates payload kind and display. */
     public SessionMode getSessionMode() {
         return sessionMode;
     }
@@ -228,23 +220,45 @@ public class MainActivity extends HubConnectionActivity {
         if (lostSession) {
             stopRecording(false);
         }
-        String displayStatus = connected && sttConnected ? "Hub 已連線" : status;
-        if (!TextUtils.equals(tvHubConnection.getText(), displayStatus)) {
-            tvHubConnection.setText(displayStatus);
+        if (!TextUtils.equals(tvHubConnection.getText(), status)) {
+            tvHubConnection.setText(status);
         }
         tvHubConnection.setTextColor(connected ? 0xFFA7E5BD : 0xFFFFD19A);
-        btnRecord.setEnabled(connected);
+        updateStartButton();
         spinnerLanguage.setEnabled(connected);
         cbEnableGesture.setEnabled(connected);
         btnTestGesture.setEnabled(connected);
         btnSettings.setEnabled(connected);
     }
 
+    private void updateStartButton() {
+        btnRecord.setEnabled(!isRecording && sessionMode != null && hubHost != null);
+    }
+
+    private void initRoleSelector() {
+        RadioGroup roles = findViewById(R.id.sessionRole);
+        if (sessionMode != null) {
+            roles.check(sessionMode == SessionMode.DEAF ? R.id.roleDeaf : R.id.roleHearing);
+        }
+        roles.setOnCheckedChangeListener((group, checkedId) -> {
+            if (checkedId == R.id.roleDeaf) {
+                sessionMode = SessionMode.DEAF;
+            } else if (checkedId == R.id.roleHearing) {
+                sessionMode = SessionMode.HEARING;
+            } else {
+                sessionMode = null;
+            }
+            SessionModeStore.save(this, sessionMode);
+            updateStartButton();
+        });
+    }
+
     private void initViews() {
         tvHubConnection = findViewById(R.id.tvHubConnection);
         findViewById(R.id.btnConnectRetry).setOnClickListener(v -> retryHubConnection());
         rootContainer = findViewById(R.id.rootContainer);
-        layoutControls = findViewById(R.id.layoutControls);
+        sessionControls = findViewById(R.id.sessionControls);
+        recordingStatusBar = findViewById(R.id.layoutTopBar);
         layoutRecordingControls = findViewById(R.id.layoutRecordingControls);
         btnRecord = findViewById(R.id.btnRecord);
         btnSettings = findViewById(R.id.btnSettings);
@@ -312,6 +326,7 @@ public class MainActivity extends HubConnectionActivity {
             btnPauseRecording.setOnClickListener(v -> togglePauseRecording());
         }
 
+        initRoleSelector();
         updateRecordingUi(false);
         showHubConnection(null, "正在檢查 Hub 連線…");
     }
@@ -405,10 +420,9 @@ public class MainActivity extends HubConnectionActivity {
     }
 
     private void updateRecordingUi(boolean recording) {
+        sessionControls.setVisibility(recording ? View.GONE : View.VISIBLE);
+        recordingStatusBar.setVisibility(recording ? View.VISIBLE : View.GONE);
         if (recording) {
-            if (layoutControls != null) {
-                layoutControls.setVisibility(View.GONE);
-            }
             if (layoutRecordingControls != null) {
                 layoutRecordingControls.setVisibility(View.VISIBLE);
             }
@@ -420,9 +434,6 @@ public class MainActivity extends HubConnectionActivity {
                 rootContainer.setBackgroundColor(Color.BLACK);
             }
         } else {
-            if (layoutControls != null) {
-                layoutControls.setVisibility(View.VISIBLE);
-            }
             if (layoutRecordingControls != null) {
                 layoutRecordingControls.setVisibility(View.GONE);
             }
@@ -472,30 +483,30 @@ public class MainActivity extends HubConnectionActivity {
         int tint;
 
         if (!sttConnected) {
-            text = "● 連線中";
-            tint = Color.parseColor("#2196F3");
+            text = "正在連線到 Hub…";
+            tint = 0xFFD3E3E8;
         } else if (isPaused) {
-            text = "● 暫停";
-            tint = Color.parseColor("#FFC107");
+            text = "Hub 已連線 · 已暫停";
+            tint = 0xFFFFD19A;
         } else {
-            text = "● 錄音中";
-            tint = Color.parseColor("#4CAF50");
+            text = "Hub 已連線 · 錄音中";
+            tint = 0xFFA7E5BD;
         }
 
         tvStatusChip.setText(text);
         tvStatusChip.setVisibility(View.VISIBLE);
-        tvStatusChip.setBackgroundTintList(ColorStateList.valueOf(tint));
+        tvStatusChip.setTextColor(tint);
 
         if (tvGestureSpeakingChip != null) {
             if (!isGestureEnabled()) {
                 tvGestureSpeakingChip.setVisibility(View.GONE);
             } else if (gestureTtsSpeaking) {
                 tvGestureSpeakingChip.setVisibility(View.VISIBLE);
-                tvGestureSpeakingChip.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#9C27B0")));
+                tvGestureSpeakingChip.setTextColor(0xFFDCCBF6);
                 tvGestureSpeakingChip.setText("手勢播報中");
             } else if (pendingGestureToSpeak != null) {
                 tvGestureSpeakingChip.setVisibility(View.VISIBLE);
-                tvGestureSpeakingChip.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#78909C")));
+                tvGestureSpeakingChip.setTextColor(0xFFD3E3E8);
                 tvGestureSpeakingChip.setText("手勢等待中");
             } else {
                 tvGestureSpeakingChip.setVisibility(View.GONE);
@@ -961,7 +972,7 @@ public class MainActivity extends HubConnectionActivity {
     }
 
     private void startRecording() {
-        if (hubHost == null) {
+        if (hubHost == null || sessionMode == null) {
             return;
         }
         if (config == null) {
@@ -1090,7 +1101,7 @@ public class MainActivity extends HubConnectionActivity {
         isPaused = false;
         sttConnected = false;
         btnRecord.setText("開始錄音");
-        btnRecord.setEnabled(hubHost != null);
+        updateStartButton();
         if (hubHost != null) {
             tvHubConnection.setText("Hub 可連線");
         }
@@ -1180,7 +1191,6 @@ public class MainActivity extends HubConnectionActivity {
                         return;
                     }
                     sttConnected = true;
-                    tvHubConnection.setText("Hub 已連線");
                     refreshPauseButtonState();
                     updateStatusChip();
                     maybeStartAudioCapture();

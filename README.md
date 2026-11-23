@@ -53,7 +53,7 @@ audio and registers a name on the hub.
 
 | Feature                 | What it does                                                                   | Main files                                                                             |
 | ----------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| Role chooser            | Picks the deaf/hearing session that gates payload kind and display             | `RoleChooserActivity.java`, `ecosys/SessionMode.java`                                  |
+| Role selector           | Picks the deaf/hearing session that gates payload kind and display             | `MainActivity.java`, `ecosys/SessionMode.java`                                  |
 | BLE-assisted connect    | Reads the hotspot SSID/passphrase over BLE, joins it, then detects the gateway | `ConnectActivity.java`, `ecosys/BleCredentialClient.java`, `ecosys/HubConnection.java` |
 | ecosys stream client    | Opens the hub's `StreamService/OpenStream` bidi stream on port 9000, no token  | `ecosys/EcosysStreamClient.java`                                                       |
 | Subtitle display        | Renders hub transcripts with per-speaker colour separation                     | `MainActivity.java`, `ecosys/SpeakerColourMap.java`                                    |
@@ -167,8 +167,9 @@ On macOS or Linux:
 ./gradlew :app:assembleDebug
 ```
 
-4. Enable the phone's hotspot and start the Hub. On first launch pick a role
-   (聽障 / 健全). The session screen can read the hotspot credentials over BLE,
+4. Enable the phone's hotspot and start the Hub. Pick a role (聽障 / 健全)
+   in the session screen before recording. The screen remembers the choice and
+   lets you change it between sessions. The session screen can read the hotspot credentials over BLE,
    join the hotspot and detect the gateway as the Hub on port 9000. If automatic
    setup fails, join the hotspot in the glasses' Wi-Fi settings and tap 重新偵測.
    The session controls become available when the Hub is reachable. If the Hub
