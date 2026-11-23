@@ -216,35 +216,27 @@
                 android:textSize="18sp"
                 android:textColor="#FFFFFF" />
 
-            <LinearLayout
+            <Button
+                android:id="@+id/btnVoiceEnrollment"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
+                android:layout_marginTop="6dp"
+                android:backgroundTint="#315D80"
+                android:text="辨認聲音"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:minHeight="52dp" />
 
-                <Button
-                    android:id="@+id/btnVoiceEnrollment"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="12dp"
-                    android:backgroundTint="#455A64"
-                    android:text="辨認聲音"
-                    android:textColor="#FFFFFF"
-                    android:textSize="18sp"
-                    android:padding="14dp" />
-
-                <Button
-                    android:id="@+id/btnTestGesture"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="僅測試手勢"
-                    android:textSize="18sp"
-                    android:backgroundTint="#607D8B"
-                    android:textColor="#FFFFFF"
-                    android:padding="14dp"/>
-            </LinearLayout>
+            <Button
+                android:id="@+id/btnTestGesture"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:backgroundTint="#654777"
+                android:text="僅測試手勢"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:minHeight="52dp" />
         </LinearLayout>
     </ScrollView>
 

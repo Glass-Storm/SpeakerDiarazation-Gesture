@@ -26,296 +26,294 @@
             android:contentDescription="返回"
             android:padding="10dp" />
         <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="設定"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"
+            android:layout_marginStart="10dp" />
+        <TextView
+            android:id="@+id/tvCurrentRole"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="設定"
-            android:textSize="24sp"
+            android:text="目前身份：尚未選擇"
+            android:textColor="#BBBBBB"
+            android:textSize="15sp"
+            android:layout_marginEnd="8dp" />
+        <Button
+            android:id="@+id/btnSwitchRole"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="切換身份"
+            android:textSize="14sp"
             android:textColor="#FFFFFF"
-            android:textStyle="bold"
-            android:layout_marginStart="12dp" />
+            android:minHeight="48dp"
+            android:layout_marginEnd="6dp"
+                            style="@style/Widget.Material3.Button.TextButton" />
+        <Button
+            android:id="@+id/btnDebugPage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="除錯"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF"
+            android:minHeight="48dp"
+                            style="@style/Widget.Material3.Button.TextButton" />
     </LinearLayout>
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:orientation="horizontal"
         android:layout_weight="1">
-        <ScrollView
+        <androidx.core.widget.NestedScrollView
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:fillViewport="true"
-            android:background="@drawable/bg_session_connection">
+            android:layout_weight="0.9"
+            android:layout_marginEnd="12dp">
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="12dp">
+                android:orientation="vertical">
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-                    <TextView
-                        android:layout_width="0dp"
+                    android:orientation="vertical"
+                    android:padding="14dp"
+                    android:background="@drawable/bg_session_connection">
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="字體大小"
-                        android:textSize="17sp"
-                        android:textStyle="bold"
-                        android:textColor="#FFFFFF"
-                        android:layout_weight="1" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:text="字幕大小"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:textColor="#FFFFFF"
+                            android:layout_weight="1" />
+                        <TextView
+                            android:id="@+id/tvFontSizeLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="24 sp"
+                            android:textColor="#BBBBBB"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+                    <SeekBar
+                        android:id="@+id/seekFontSize"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="12"
+                        android:progress="2"
+                        android:progressTint="#4CAF50"
+                        android:thumbTint="#4CAF50"
+                        android:minHeight="36dp"
+                        android:layout_marginTop="2dp" />
                     <TextView
-                        android:id="@+id/tvFontSizeLabel"
+                        android:id="@+id/tvFontPreview"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="字幕預覽"
+                        android:textColor="#FFFFFF"
+                        android:textSize="14sp"
+                        android:background="#1D2123"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp"
+                        android:layout_marginTop="4dp" />
+                    <LinearLayout
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="24 sp"
-                        android:textColor="#BBBBBB"
-                        android:textSize="14sp" />
-                </LinearLayout>
-                <SeekBar
-                    android:id="@+id/seekFontSize"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:max="12"
-                    android:progress="2"
-                    android:progressTint="#4CAF50"
-                    android:thumbTint="#4CAF50"
-                    android:minHeight="36dp" />
-                <TextView
-                    android:id="@+id/tvFontPreview"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="字幕預覽"
-                    android:textColor="#FFFFFF"
-                    android:textSize="14sp"
-                    android:background="#1D2123"
-                    android:maxLines="1"
-                    android:ellipsize="end"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp"
-                    android:paddingTop="3dp"
-                    android:paddingBottom="3dp" />
-                <Button
-                    android:id="@+id/btnSaveSettings"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="儲存設定"
-                    android:textSize="16sp"
-                    android:backgroundTint="#4CAF50"
-                    android:textColor="#FFFFFF"
-                    android:minHeight="48dp"
-                    android:layout_marginTop="3dp" />
-                <TextView
-                    android:id="@+id/tvTtsEngineLabel"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="TTS 引擎"
-                    android:textColor="#FFFFFF"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:layout_marginTop="10dp" />
-                <Spinner
-                    android:id="@+id/spinnerTtsEngine"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_spinner_background"
-                    android:popupBackground="@drawable/bg_spinner_popup"
-                    android:layout_marginTop="4dp"
-                    android:minHeight="42dp" />
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginTop="3dp">
-                    <Button
-                        android:id="@+id/btnTtsSetup"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:text="語音資料 / 設定"
-                        android:textSize="14sp"
-                        android:backgroundTint="#455A64"
-                        android:textColor="#FFFFFF"
-                        android:minHeight="48dp"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="8dp" />
-                    <Button
-                        android:id="@+id/btnTtsTest"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:text="測試語音"
-                        android:textSize="14sp"
-                        android:backgroundTint="#607D8B"
-                        android:textColor="#FFFFFF"
-                        android:minHeight="48dp"
-                        android:layout_weight="1" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_gravity="end"
+                        android:layout_marginTop="4dp">
+                        <Button
+                            android:id="@+id/btnSaveSettings"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="儲存設定"
+                            android:textSize="16sp"
+                            android:backgroundTint="#347747"
+                            android:textColor="#FFFFFF"
+                            android:minHeight="48dp" />
+                    </LinearLayout>
                 </LinearLayout>
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginTop="6dp">
+                    android:orientation="vertical"
+                    android:padding="14dp"
+                    android:background="@drawable/bg_session_connection"
+                    android:layout_marginTop="12dp">
                     <TextView
-                        android:id="@+id/tvCurrentRole"
-                        android:layout_width="0dp"
+                        android:id="@+id/tvTtsEngineLabel"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="目前身份：尚未選擇"
-                        android:textColor="#BBBBBB"
-                        android:textSize="14sp"
-                        android:layout_weight="1" />
-                    <Button
-                        android:id="@+id/btnSwitchRole"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="切換身份"
-                        android:textSize="14sp"
-                        android:backgroundTint="#455A64"
+                        android:text="語音播放（TTS）"
                         android:textColor="#FFFFFF"
-                        android:minHeight="48dp"
-                        android:layout_marginEnd="6dp" />
-                    <Button
-                        android:id="@+id/btnDebugPage"
-                        android:layout_width="wrap_content"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+                    <Spinner
+                        android:id="@+id/spinnerTtsEngine"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="除錯"
-                        android:textSize="14sp"
-                        android:backgroundTint="#8D6E63"
-                        android:textColor="#FFFFFF"
-                        android:minHeight="48dp" />
+                        android:background="@drawable/bg_spinner_background"
+                        android:popupBackground="@drawable/bg_spinner_popup"
+                        android:layout_marginTop="8dp"
+                        android:minHeight="42dp" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="4dp">
+                        <Button
+                            android:id="@+id/btnTtsSetup"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="語音資料 / 設定"
+                            android:textSize="14sp"
+                            android:textColor="#FFFFFF"
+                            android:minHeight="48dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="8dp"
+                            style="@style/Widget.Material3.Button.TextButton" />
+                        <Button
+                            android:id="@+id/btnTtsTest"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="測試語音"
+                            android:textSize="14sp"
+                            android:textColor="#FFFFFF"
+                            android:minHeight="48dp"
+                            android:layout_weight="1"
+                            style="@style/Widget.Material3.Button.TextButton" />
+                    </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
-        </ScrollView>
-        <LinearLayout
+        </androidx.core.widget.NestedScrollView>
+        <androidx.core.widget.NestedScrollView
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:layout_weight="1"
-            android:layout_marginStart="12dp">
+            android:layout_weight="1.25">
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:orientation="vertical"
-                android:layout_weight="1"
-                android:padding="12dp"
-                android:background="@drawable/bg_session_connection"
-                android:layout_marginBottom="10dp">
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:orientation="vertical"
+                    android:padding="14dp"
+                    android:background="@drawable/bg_session_connection">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:id="@+id/tvSpeakerSectionTitle"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:text="說話者聲紋"
+                            android:textColor="#FFFFFF"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:layout_weight="1" />
+                        <Button
+                            android:id="@+id/btnAddSpeaker"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="新增說話者"
+                            android:textSize="14sp"
+                            android:backgroundTint="#315D80"
+                            android:textColor="#FFFFFF"
+                            android:minHeight="48dp" />
+                    </LinearLayout>
                     <TextView
-                        android:id="@+id/tvSpeakerSectionTitle"
-                        android:layout_width="0dp"
+                        android:id="@+id/tvNoSpeakersHint"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="聲紋註冊"
-                        android:textColor="#FFFFFF"
-                        android:textSize="17sp"
-                        android:textStyle="bold"
-                        android:layout_weight="1" />
-                    <Button
-                        android:id="@+id/btnAddSpeaker"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="新增說話者"
+                        android:text="目前尚未註冊說話者"
+                        android:textColor="#C4CBCD"
                         android:textSize="14sp"
-                        android:backgroundTint="#455A64"
-                        android:textColor="#FFFFFF"
-                        android:minHeight="48dp" />
-                </LinearLayout>
-                <TextView
-                    android:id="@+id/tvNoSpeakersHint"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="目前尚未註冊說話者"
-                    android:textColor="#C4CBCD"
-                    android:textSize="14sp"
-                    android:background="@android:color/transparent"
-                    android:visibility="gone"
-                    android:layout_marginTop="4dp" />
-                <ScrollView
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1">
+                        android:background="@android:color/transparent"
+                        android:visibility="gone"
+                        android:layout_marginTop="4dp" />
                     <LinearLayout
                         android:id="@+id/containerEnrolledSpeakers"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical" />
-                </ScrollView>
-            </LinearLayout>
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:orientation="vertical"
-                android:layout_weight="1"
-                android:padding="12dp"
-                android:background="@drawable/bg_session_connection">
-                <TextView
-                    android:id="@+id/tvAudioFileSectionTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="文字記錄管理"
-                    android:textColor="#FFFFFF"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
-                <TextView
-                    android:id="@+id/tvTranscriptPath"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="路徑"
-                    android:textColor="#BBBBBB"
-                    android:textSize="13sp"
-                    android:maxLines="1"
-                    android:ellipsize="middle"
-                    android:layout_marginTop="3dp" />
-                <TextView
-                    android:id="@+id/tvNoAudioFilesHint"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="尚未保存任何文字記錄"
-                    android:textColor="#C4CBCD"
-                    android:textSize="14sp"
-                    android:background="@android:color/transparent"
-                    android:visibility="gone"
-                    android:layout_marginTop="8dp" />
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/rvTranscripts"
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:nestedScrollingEnabled="false"
-                    android:layout_weight="1"
-                    android:layout_marginTop="4dp" />
+                        android:orientation="vertical"
+                        android:layout_marginTop="4dp" />
+                </LinearLayout>
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-                    <Button
-                        android:id="@+id/btnLoadMoreTranscripts"
-                        android:layout_width="0dp"
+                    android:orientation="vertical"
+                    android:padding="14dp"
+                    android:background="@drawable/bg_session_connection"
+                    android:layout_marginTop="12dp">
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="載入更多"
-                        android:textSize="14sp"
-                        android:backgroundTint="#455A64"
-                        android:textColor="#FFFFFF"
-                        android:visibility="gone"
-                        android:minHeight="48dp"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="8dp" />
-                    <Button
-                        android:id="@+id/btnClearTranscripts"
-                        android:layout_width="0dp"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:id="@+id/tvAudioFileSectionTitle"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:text="文字記錄"
+                            android:textColor="#FFFFFF"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:layout_weight="1" />
+                        <Button
+                            android:id="@+id/btnLoadMoreTranscripts"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="載入更多"
+                            android:textSize="14sp"
+                            android:textColor="#FFFFFF"
+                            android:visibility="gone"
+                            android:minHeight="48dp"
+                            style="@style/Widget.Material3.Button.TextButton" />
+                        <Button
+                            android:id="@+id/btnClearTranscripts"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="刪除全部記錄"
+                            android:textSize="14sp"
+                            android:textColor="#FFB4AC"
+                            android:visibility="gone"
+                            android:minHeight="48dp"
+                            style="@style/Widget.Material3.Button.TextButton" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/tvNoAudioFilesHint"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="刪除全部記錄"
+                        android:text="尚未保存任何文字記錄"
+                        android:textColor="#C4CBCD"
                         android:textSize="14sp"
-                        android:backgroundTint="#734140"
-                        android:textColor="#FFFFFF"
+                        android:background="@android:color/transparent"
                         android:visibility="gone"
-                        android:minHeight="48dp"
-                        android:layout_weight="1" />
+                        android:layout_marginTop="2dp" />
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvTranscripts"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
                 </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
     </LinearLayout>
 </LinearLayout>
