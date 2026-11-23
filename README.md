@@ -167,12 +167,14 @@ On macOS or Linux:
 ./gradlew :app:assembleDebug
 ```
 
-4. Enable the phone's hotspot. On first launch pick a role (聽障 / 健全); the
-   connect screen then reads the hotspot SSID/passphrase from the phone over BLE,
-   joins it, and auto-detects the hotspot gateway as the hub host on port 9000.
-   If the BLE read fails, join the hotspot by hand and tap 重試. Grant microphone
-   permission for 聽障; grant camera permission for 健全 (camera stills and local
-   gesture recognition).
+4. Enable the phone's hotspot and start the Hub. On first launch pick a role
+   (聽障 / 健全). The session screen can read the hotspot credentials over BLE,
+   join the hotspot and detect the gateway as the Hub on port 9000. If automatic
+   setup fails, join the hotspot in the glasses' Wi-Fi settings and tap 重新偵測.
+   The session controls become available when the Hub is reachable. If the Hub
+   disconnects, recording stops. Start a new session once the Hub is reachable
+   again. Grant microphone permission for 聽障 and camera permission for 健全
+   (camera stills and local gesture recognition).
 
 ## Common commands
 

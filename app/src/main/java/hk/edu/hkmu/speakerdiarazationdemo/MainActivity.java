@@ -9,11 +9,6 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
-import android.net.ConnectivityManager;
-import android.net.Network;
-import android.net.NetworkCapabilities;
-import android.net.NetworkInfo;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.os.Handler;
@@ -39,7 +34,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import com.google.protobuf.ByteString;
@@ -70,14 +64,12 @@ import java.util.Locale;
 import com.google.mediapipe.examples.gesturerecognizer.GestureBackgroundRunner;
 import hk.edu.hkmu.speakerdiarazationdemo.SettingsActivity;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends HubConnectionActivity {
     private static final String TAG = "MainActivity";
     /** Carries the chosen {@link SessionMode} name from RoleChooserActivity to this screen. */
     public static final String EXTRA_SESSION_MODE = "extra_session_mode";
-    /** Optional hub-host override (tools/tests); defaults to the SoftAP gateway. */
+    /** Optional hub-host override for the debug harness. */
     public static final String EXTRA_HUB_HOST = "extra_hub_host";
-    /** Last-resort SoftAP gateway; ConnectActivity normally supplies the auto-detected host. */
-    private static final String DEFAULT_HUB_HOST = "192.168.43.1";
     private static final String ECOSYS_DEVICE_ID = "glasses";
     private static final String UNKNOWN_SPEAKER_DISPLAY = "Unknown";
     private static final int PERMISSION_REQUEST_AUDIO = 100;
@@ -104,6 +96,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvStatusChip;
     private TextView tvGestureSpeakingChip;
     private Button btnTestGesture;
+    private TextView tvHubConnection;
     
     private EcosysStreamClient ecosysClient;
     private EcosysAudioCapture ecosysAudioCapture;
@@ -178,18 +171,11 @@ public class MainActivity extends AppCompatActivity {
         
         preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
-        hubHost = getIntent().getStringExtra(EXTRA_HUB_HOST);
-        if (TextUtils.isEmpty(hubHost)) {
-            hubHost = DEFAULT_HUB_HOST;
-        }
-        HubHostStore.save(this, hubHost);
-
         initViews();
         initSpeakerColors();
         loadConfig();
         setupLanguageSelector();
         applyFontSize();
-        checkPermissions();
         
     }
 
@@ -205,7 +191,58 @@ public class MainActivity extends AppCompatActivity {
         refreshEnrolledSpeakers();
     }
 
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (tvHubConnection != null && !isFinishing()) {
+            if (!isRecording) {
+                showHubConnection(null, "正在檢查 Hub 連線…");
+            }
+            startHubMonitoring();
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        stopHubMonitoring();
+        super.onStop();
+    }
+
+    @Override
+    protected String hubHostOverride() {
+        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) == 0) {
+            return null;
+        }
+        String override = getIntent().getStringExtra(EXTRA_HUB_HOST);
+        return TextUtils.isEmpty(override) ? null : override;
+    }
+
+    @Override
+    protected void showHubConnection(String reachableHost, String status) {
+        boolean connected = reachableHost != null;
+        boolean lostSession = isRecording && !TextUtils.equals(hubHost, reachableHost);
+        if (connected && !TextUtils.equals(hubHost, reachableHost)) {
+            HubHostStore.save(this, reachableHost);
+        }
+        hubHost = reachableHost;
+        if (lostSession) {
+            stopRecording(false);
+        }
+        String displayStatus = connected && sttConnected ? "Hub 已連線" : status;
+        if (!TextUtils.equals(tvHubConnection.getText(), displayStatus)) {
+            tvHubConnection.setText(displayStatus);
+        }
+        tvHubConnection.setTextColor(connected ? 0xFFA7E5BD : 0xFFFFD19A);
+        btnRecord.setEnabled(connected);
+        spinnerLanguage.setEnabled(connected);
+        cbEnableGesture.setEnabled(connected);
+        btnTestGesture.setEnabled(connected);
+        btnSettings.setEnabled(connected);
+    }
+
     private void initViews() {
+        tvHubConnection = findViewById(R.id.tvHubConnection);
+        findViewById(R.id.btnConnectRetry).setOnClickListener(v -> retryHubConnection());
         rootContainer = findViewById(R.id.rootContainer);
         layoutControls = findViewById(R.id.layoutControls);
         layoutRecordingControls = findViewById(R.id.layoutRecordingControls);
@@ -276,6 +313,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         updateRecordingUi(false);
+        showHubConnection(null, "正在檢查 Hub 連線…");
     }
 
     private void openSettings() {
@@ -923,6 +961,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startRecording() {
+        if (hubHost == null) {
+            return;
+        }
         if (config == null) {
             Toast.makeText(this, "配置未載入", Toast.LENGTH_SHORT).show();
             return;
@@ -935,10 +976,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        if (!isNetworkAvailable()) {
-            Toast.makeText(this, "請檢查網路連線後再試", Toast.LENGTH_SHORT).show();
-            return;
-        }
         
         refreshEnrolledSpeakers();
         if (config != null) {
@@ -968,12 +1005,6 @@ public class MainActivity extends AppCompatActivity {
         refreshPauseButtonState();
         updateStatusChip();
 
-        startGestureIfEnabled();
-
-        if (sessionMode != null && sessionMode.expectsInboundFrames()) {
-            startEcosysStream();
-        }
-
         transcriptManager = new TranscriptManager(this, config, new TranscriptManager.TranscriptCallback() {
             @Override
             public void onTranscriptUpdate(TranscriptResult result, boolean shouldAppend) {
@@ -991,48 +1022,10 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         transcriptManager.setMutedSpeakers(mutedSpeakerTokens);
-    }
 
-    private boolean isNetworkAvailable() {
-        if (isDebugHubOverride()) {
-            return true;
+        if (sessionMode.expectsInboundFrames()) {
+            startEcosysStream();
         }
-        ConnectivityManager connectivityManager =
-                (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-        if (connectivityManager == null) {
-            return false;
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Network activeNetwork = connectivityManager.getActiveNetwork();
-            if (activeNetwork == null) {
-                return false;
-            }
-            NetworkCapabilities capabilities =
-                    connectivityManager.getNetworkCapabilities(activeNetwork);
-            return capabilities != null && (
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-            );
-        } else {
-            @SuppressWarnings("deprecation")
-            NetworkInfo networkInfo = connectivityManager.getActiveNetworkInfo();
-            return networkInfo != null && networkInfo.isConnected();
-        }
-    }
-
-    /**
-     * Debug-only harness hook: the S3 健全 flow has no Wi-Fi gateway (the hub is
-     * reached over an adb tunnel) and the glasses is deliberately kept off any
-     * network. When the activity is launched with an explicit
-     * {@link #EXTRA_HUB_HOST}, a debuggable build skips the active-network gate.
-     * Release builds and the normal launcher flow keep the real check.
-     */
-    private boolean isDebugHubOverride() {
-        boolean debuggable =
-                (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
-        return debuggable && getIntent().hasExtra(EXTRA_HUB_HOST);
     }
 
     /** Pauses/resumes the 聽障 mic uplink owned by the ecosys stream; 健全 sends no mic. */
@@ -1060,7 +1053,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void resumeAudioCapture() {
-        if (ecosysClient == null) {
+        if (!sttConnected) {
             Toast.makeText(this, "尚未連線至中樞", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -1083,8 +1076,7 @@ public class MainActivity extends AppCompatActivity {
             btnPauseRecording.setEnabled(false);
         } else {
             btnPauseRecording.setText(isPaused ? "繼續錄音" : "暫停錄音");
-            boolean canResume = ecosysClient != null;
-            btnPauseRecording.setEnabled(!isPaused || (isPaused && canResume));
+            btnPauseRecording.setEnabled(sttConnected);
         }
     }
 
@@ -1098,19 +1090,22 @@ public class MainActivity extends AppCompatActivity {
         isPaused = false;
         sttConnected = false;
         btnRecord.setText("開始錄音");
-        btnRecord.setEnabled(true);
+        btnRecord.setEnabled(hubHost != null);
+        if (hubHost != null) {
+            tvHubConnection.setText("Hub 可連線");
+        }
         partialSpeaker = null;
         updateRecordingUi(false);
         refreshPauseButtonState();
         updateStatusChip();
         stopGesture();
+        stopEcosysStream();
 
         if (transcriptManager != null) {
             transcriptManager.flush();
             transcriptManager.saveToFile();
+            transcriptManager = null;
         }
-
-        stopEcosysStream();
         
         if (showSuccessToast && wasRecording) {
             Toast.makeText(this, "錄音已停止並保存", Toast.LENGTH_SHORT).show();
@@ -1174,16 +1169,26 @@ public class MainActivity extends AppCompatActivity {
         if (ecosysClient != null) {
             return;
         }
-        ecosysClient = new EcosysStreamClient(hubHost, EcosysStreamClient.DEFAULT_HUB_PORT, ECOSYS_DEVICE_ID);
-        ecosysClient.addListener(new EcosysStreamClient.Listener() {
+        EcosysStreamClient client =
+                new EcosysStreamClient(hubHost, EcosysStreamClient.DEFAULT_HUB_PORT, ECOSYS_DEVICE_ID);
+        ecosysClient = client;
+        client.addListener(new EcosysStreamClient.Listener() {
             @Override
             public void onConnected() {
                 runOnUiThread(() -> {
+                    if (ecosysClient != client || !isRecording) {
+                        return;
+                    }
                     sttConnected = true;
-                    btnRecord.setEnabled(true);
+                    tvHubConnection.setText("Hub 已連線");
                     refreshPauseButtonState();
                     updateStatusChip();
-                    startHubCameraUplink();
+                    maybeStartAudioCapture();
+                    if (sessionMode == SessionMode.HEARING) {
+                        startHubCameraUplink();
+                    } else {
+                        startGestureIfEnabled();
+                    }
                 });
             }
 
@@ -1196,7 +1201,11 @@ public class MainActivity extends AppCompatActivity {
                     case RESULT:
                         if (sessionMode != null && sessionMode.showsSubtitles()) {
                             StreamResult result = frame.getResult();
-                            runOnUiThread(() -> renderSubtitleResult(result));
+                            runOnUiThread(() -> {
+                                if (ecosysClient == client) {
+                                    renderSubtitleResult(result);
+                                }
+                            });
                         }
                         break;
                     case GESTURE:
@@ -1205,13 +1214,21 @@ public class MainActivity extends AppCompatActivity {
                                     frame.getGesture().getText(),
                                     frame.getGesture().getLabel());
                             if (text != null) {
-                                runOnUiThread(() -> showInboundGesture(text));
+                                runOnUiThread(() -> {
+                                    if (ecosysClient == client) {
+                                        showInboundGesture(text);
+                                    }
+                                });
                             }
                         }
                         break;
                     case TTS_AUDIO:
                         if (sessionMode != null && sessionMode.playsGestureAudio()) {
-                            playInboundAudio(frame.getTtsAudio().getPcm1616K().toByteArray());
+                            runOnUiThread(() -> {
+                                if (ecosysClient == client) {
+                                    playInboundAudio(frame.getTtsAudio().getPcm1616K().toByteArray());
+                                }
+                            });
                         }
                         break;
                     default:
@@ -1222,17 +1239,13 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onDisconnected(Throwable cause) {
                 runOnUiThread(() -> {
-                    sttConnected = false;
-                    stopHubCameraUplink();
-                    refreshPauseButtonState();
-                    updateStatusChip();
+                    if (ecosysClient == client) {
+                        showHubConnection(null, "Hub 已斷線 · 請確認手機已啟動 Hub");
+                    }
                 });
             }
         });
-        ecosysClient.start();
-
-        // 聽障 streams mic audio UP to the hub; 健全 must never upload audio.
-        maybeStartAudioCapture();
+        client.start();
     }
 
     /**
@@ -1326,20 +1339,20 @@ public class MainActivity extends AppCompatActivity {
             ecosysAudioCapture.close();
             ecosysAudioCapture = null;
         }
-        if (ecosysClient != null) {
-            ecosysClient.close();
-            ecosysClient = null;
+        EcosysStreamClient client = ecosysClient;
+        ecosysClient = null;
+        if (client != null) {
+            client.close();
         }
         stopPcmPlayer();
     }
 
     private TextView addBubble(String speakerName, int color, String content) {
         LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.HORIZONTAL);
+        container.setOrientation(LinearLayout.VERTICAL);
         container.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
-        container.setGravity(android.view.Gravity.CENTER_VERTICAL);
 
-        int bgColor = Color.parseColor("#E6404040");
+        int bgColor = Color.parseColor("#262626");
         android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
         drawable.setColor(bgColor);
         drawable.setCornerRadius(dpToPx(6));
@@ -1354,26 +1367,26 @@ public class MainActivity extends AppCompatActivity {
         container.setLayoutParams(containerParams);
 
         TextView speakerLabel = new TextView(this);
-        speakerLabel.setText(speakerName + "：");
+        speakerLabel.setText(speakerName);
         speakerLabel.setTextColor(color);
-        speakerLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, getSavedFontSize());
+        speakerLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, getSavedFontSize() * 0.75f);
         speakerLabel.setTypeface(Typeface.DEFAULT_BOLD);
         LinearLayout.LayoutParams speakerParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        speakerParams.setMargins(0, 0, dpToPx(4), 0);
+        speakerParams.bottomMargin = dpToPx(4);
         speakerLabel.setLayoutParams(speakerParams);
 
         TextView contentView = new TextView(this);
         contentView.setText(content);
         contentView.setTextColor(Color.WHITE);
         contentView.setTextSize(TypedValue.COMPLEX_UNIT_SP, getSavedFontSize());
+        contentView.setLineSpacing(dpToPx(4), 1f);
         contentView.setId(R.id.transcript_text_view);
         LinearLayout.LayoutParams contentParams = new LinearLayout.LayoutParams(
-            0,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            1.0f
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
         );
         contentView.setLayoutParams(contentParams);
 

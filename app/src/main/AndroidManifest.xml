@@ -36,9 +36,6 @@
             android:name=".SpeakerEnrollmentActivity"
             android:exported="false" />
         <activity
-            android:name=".ConnectActivity"
-            android:exported="false" />
-        <activity
             android:name=".DebugActivity"
             android:exported="false" />
         <activity
