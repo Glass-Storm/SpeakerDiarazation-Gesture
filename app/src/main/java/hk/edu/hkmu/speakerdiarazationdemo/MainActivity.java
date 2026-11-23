@@ -95,6 +95,7 @@ public class MainActivity extends HubConnectionActivity {
     private TextView tvStatusChip;
     private TextView tvGestureSpeakingChip;
     private Button btnTestGesture;
+    private Button btnVoiceEnrollment;
     private TextView tvHubConnection;
     
     private EcosysStreamClient ecosysClient;
@@ -228,6 +229,7 @@ public class MainActivity extends HubConnectionActivity {
         spinnerLanguage.setEnabled(connected);
         cbEnableGesture.setEnabled(connected);
         btnTestGesture.setEnabled(connected);
+        btnVoiceEnrollment.setEnabled(connected);
         btnSettings.setEnabled(connected);
     }
 
@@ -272,6 +274,8 @@ public class MainActivity extends HubConnectionActivity {
         tvStatusChip = findViewById(R.id.tvStatusChip);
         tvGestureSpeakingChip = findViewById(R.id.tvGestureSpeakingChip);
         btnTestGesture = findViewById(R.id.btnTestGesture);
+        btnVoiceEnrollment = findViewById(R.id.btnVoiceEnrollment);
+        btnVoiceEnrollment.setOnClickListener(v -> openVoiceEnrollment());
 
         btnRecord.setOnClickListener(v -> {
             if (isRecording) {
@@ -329,6 +333,18 @@ public class MainActivity extends HubConnectionActivity {
         initRoleSelector();
         updateRecordingUi(false);
         showHubConnection(null, "正在檢查 Hub 連線…");
+    }
+
+    private void openVoiceEnrollment() {
+        if (hubHost == null) {
+            return;
+        }
+        MainStreamGuard.stopBeforeEnrollment(isRecording, ecosysClient != null, this::stopRecording);
+        Intent intent = new Intent(this, SpeakerEnrollmentActivity.class);
+        String defaultLanguage = config == null ? "yue" : config.getLanguage();
+        intent.putExtra(SpeakerEnrollmentActivity.EXTRA_LANGUAGE,
+                preferences.getString(PREF_LANGUAGE_CODE, defaultLanguage));
+        startActivity(intent);
     }
 
     private void openSettings() {

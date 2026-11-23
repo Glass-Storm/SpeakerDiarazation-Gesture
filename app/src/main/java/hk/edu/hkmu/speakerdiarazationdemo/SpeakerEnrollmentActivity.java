@@ -44,7 +44,7 @@ import java.util.Locale;
 /**
  * Local voiceprint enrollment for the hub.
  *
- * <p>The screen records exactly {@value #RECORD_DURATION_MS} ms of 16 kHz mono
+ * <p>The screen records eight seconds of samples as 16 kHz mono
  * PCM16 audio (shown as a determinate progress bar), asks for a name validated
  * by {@link EnrollmentName} ({@code ^[\p{Han}A-Za-z0-9]+$}, 1–24 chars), and
  * sends an {@code enroll_request{name, audio_pcm16_16k}} over the plaintext
@@ -67,13 +67,9 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
     private static final String DEFAULT_HUB_HOST = "192.168.43.1";
     private static final String ECOSYS_DEVICE_ID = "glasses";
 
-    /** The hub minimum, and the exact length this screen records. */
-    public static final int RECORD_DURATION_MS = 8000;
     private static final int RECORD_TICK_MS = 100;
-
-    /** Bytes in an 8 s clip of 16 kHz mono PCM16; the hub rejects anything shorter. */
-    private static final int MIN_ENROLLMENT_BYTES =
-            (RECORD_DURATION_MS / 1000) * EnrollmentRecorder.SAMPLE_RATE * 2;
+    private static final long CAPTURE_TIMEOUT_MS = 12_000L;
+    private static final int MIN_ENROLLMENT_BYTES = EnrollmentRecorder.TARGET_SAMPLES * Short.BYTES;
 
     private static final long ENROLL_TIMEOUT_MS = 15_000L;
 
@@ -109,19 +105,24 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
             if (!isRecording) {
                 return;
             }
-            long elapsed = SystemClock.elapsedRealtime() - recordStartMs;
-            if (elapsed >= RECORD_DURATION_MS) {
-                progressRecord.setProgress(100);
+            int samples = recorder.getCapturedSamples();
+            if (samples >= EnrollmentRecorder.TARGET_SAMPLES
+                    || recorder.hasCaptureFailed()
+                    || SystemClock.elapsedRealtime() - recordStartMs >= CAPTURE_TIMEOUT_MS) {
                 stopRecording();
                 return;
             }
-            int percent = (int) (elapsed * 100 / RECORD_DURATION_MS);
-            progressRecord.setProgress(percent);
+            progressRecord.setProgress((int) (samples * 100L / EnrollmentRecorder.TARGET_SAMPLES));
             tvStatus.setText(String.format(Locale.getDefault(),
-                    "錄音中… %.1f / %.1f 秒", elapsed / 1000.0, RECORD_DURATION_MS / 1000.0));
+                    "錄音中… %.1f / %d 秒", capturedSeconds(samples),
+                    EnrollmentRecorder.DURATION_SECONDS));
             handler.postDelayed(this, RECORD_TICK_MS);
         }
     };
+
+    private static double capturedSeconds(int samples) {
+        return (samples * 10 / EnrollmentRecorder.SAMPLE_RATE) / 10.0;
+    }
 
     private final Runnable enrollTimeout = () -> {
         if (isSubmitting) {
@@ -245,7 +246,10 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
             recorder = new EnrollmentRecorder();
             recorder.start();
         } catch (Exception e) {
-            recorder = null;
+            if (recorder != null) {
+                recorder.release();
+                recorder = null;
+            }
             Toast.makeText(this, "無法開始錄音：" + e.getMessage(), Toast.LENGTH_SHORT).show();
             return;
         }
@@ -266,15 +270,17 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
         }
         recorder.stop();
         isRecording = false;
-        progressRecord.setProgress(100);
-
-        byte[] pcm = recorder.getPcm16Data();
-        hasRecording = pcm.length >= MIN_ENROLLMENT_BYTES;
+        int samples = recorder.getCapturedSamples();
+        hasRecording = samples >= EnrollmentRecorder.TARGET_SAMPLES;
+        progressRecord.setProgress((int) (samples * 100L / EnrollmentRecorder.TARGET_SAMPLES));
         if (hasRecording) {
-            int seconds = pcm.length / (EnrollmentRecorder.SAMPLE_RATE * 2);
-            tvStatus.setText("錄音完成（" + seconds + " 秒），輸入名稱後按「完成註冊」");
+            tvStatus.setText("錄音完成（8 秒），輸入名稱後按「完成註冊」");
+        } else if (recorder.hasCaptureFailed()) {
+            tvStatus.setText("麥克風錄音中斷，請重新錄製");
         } else {
-            tvStatus.setText("錄音不足 8 秒，請重新錄製");
+            tvStatus.setText(String.format(Locale.getDefault(),
+                    "只收到 %.1f 秒錄音，請確認麥克風可用後重試",
+                    capturedSeconds(samples)));
         }
         updateUiState();
     }
@@ -516,6 +522,7 @@ public class SpeakerEnrollmentActivity extends AppCompatActivity {
             isRecording = false;
             hasRecording = false;
             progressRecord.setProgress(0);
+            tvStatus.setText("錄音已取消，請重新錄製");
             updateUiState();
         }
     }

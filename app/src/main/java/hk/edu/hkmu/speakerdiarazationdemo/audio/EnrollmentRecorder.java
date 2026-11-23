@@ -5,7 +5,6 @@ import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.util.Log;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -14,15 +13,18 @@ import java.nio.ByteOrder;
 
 public class EnrollmentRecorder {
     private static final String TAG = "EnrollmentRecorder";
-    public static final int SAMPLE_RATE = 16000;
+    public static final int SAMPLE_RATE = 16_000;
+    public static final int DURATION_SECONDS = 8;
+    public static final int TARGET_SAMPLES = SAMPLE_RATE * DURATION_SECONDS;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
     private static final int READ_SIZE = 1024;
 
     private AudioRecord audioRecord;
-    private boolean isRecording = false;
+    private volatile boolean isRecording;
+    private volatile boolean captureFailed;
     private Thread recordingThread;
-    private final ByteArrayOutputStream pcmData = new ByteArrayOutputStream();
+    private final EnrollmentClip clip = new EnrollmentClip(TARGET_SAMPLES);
 
     @SuppressLint("MissingPermission")
     public void start() {
@@ -50,6 +52,9 @@ public class EnrollmentRecorder {
         }
 
         audioRecord.startRecording();
+        if (audioRecord.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
+            throw new IllegalStateException("AudioRecord did not start");
+        }
         isRecording = true;
 
         recordingThread = new Thread(this::captureLoop, "EnrollmentRecorderThread");
@@ -58,21 +63,26 @@ public class EnrollmentRecorder {
 
     private void captureLoop() {
         short[] buffer = new short[READ_SIZE];
-        ByteBuffer byteBuffer = ByteBuffer.allocate(READ_SIZE * 2);
-        byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
-
-        while (isRecording && audioRecord != null) {
-            int read = audioRecord.read(buffer, 0, READ_SIZE);
-            if (read > 0) {
-                byteBuffer.clear();
-                for (int i = 0; i < read; i++) {
-                    byteBuffer.putShort(buffer[i]);
-                }
-                synchronized (pcmData) {
-                    pcmData.write(byteBuffer.array(), 0, read * 2);
-                }
+        while (isRecording) {
+            int remaining = TARGET_SAMPLES - clip.sampleCount();
+            if (remaining == 0) {
+                return;
             }
+            int read = audioRecord.read(buffer, 0, Math.min(remaining, buffer.length));
+            if (read < 0) {
+                captureFailed = isRecording;
+                return;
+            }
+            clip.append(buffer, read);
         }
+    }
+
+    public int getCapturedSamples() {
+        return clip.sampleCount();
+    }
+
+    public boolean hasCaptureFailed() {
+        return captureFailed;
     }
 
     public void stop() {
@@ -108,9 +118,7 @@ public class EnrollmentRecorder {
     }
 
     public byte[] getPcm16Data() {
-        synchronized (pcmData) {
-            return pcmData.toByteArray();
-        }
+        return clip.pcm16();
     }
 
     public byte[] getFloat32leData() {

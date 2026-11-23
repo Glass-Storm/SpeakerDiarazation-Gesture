@@ -514,10 +514,10 @@ public class SettingsActivity extends AppCompatActivity {
         items.addAll(ttsEngineLabels);
         ArrayAdapter<String> adapter = new ArrayAdapter<>(
             this,
-            android.R.layout.simple_spinner_item,
+            R.layout.item_language_spinner,
             items
         );
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        adapter.setDropDownViewResource(R.layout.item_language_spinner_dropdown);
         spinnerTtsEngine.setAdapter(adapter);
 
         String saved = preferences != null ? preferences.getString(PREF_TTS_ENGINE_PACKAGE, null) : null;

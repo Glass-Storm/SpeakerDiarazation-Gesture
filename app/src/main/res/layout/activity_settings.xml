@@ -163,7 +163,7 @@
             android:id="@+id/tvSpeakerSectionHint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="長按錄音並按照提示朗讀，即可註冊說話者。"
+            android:text="按一下開始錄音，持續說話至錄音完成。"
             android:textColor="#BBBBBB"
             android:textSize="14sp"
             android:paddingBottom="12dp" />
